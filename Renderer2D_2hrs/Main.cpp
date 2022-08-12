@@ -10,6 +10,8 @@
 #include "glm/glm.hpp"
 #include "glm/ext.hpp"
 
+#include "stb/stb_image.h"
+
 struct Vec2
 {
     float X, Y;
@@ -25,24 +27,46 @@ struct Vec4
     float X, Y, Z, W;
 };
 
+struct Vertex
+{
+    Vec4 Position;
+    Vec3 Color;
+    Vec2 TextureCoordinates;
+    float TextureIndex;
+};
+
 const char* vertexShaderSrc = "\
-        #version 330 core\
+        #version 330 core\n\
         \n\
-        layout(location = 0) in vec4 position;\
-        \n\
+        layout(location = 0) in vec4 position;\n\
+        layout(location = 1) in vec3 color;\n\
+        layout(location = 2) in vec2 texCoords;\n\
+        layout(location = 3) in float texIndex;\n\
+        out vec3 v_Color;\n\
+        out vec2 v_TexCoord;\n\
+        out float v_TexIndex;\n\
         void main()\n\
         {\n\
             gl_Position = position;\n\
+            v_Color = color;\n\
+            v_TexCoord = texCoords;\n\
+            v_TexIndex = texIndex;\n\
         }";
 
 const char* pixelShaderSrc = "\
         #version 330 core\n\
         \n\
         layout(location = 0) out vec4 color;\n\
+        in vec3 v_Color;\n\
+        in vec2 v_TexCoord;\n\
+        in float v_TexIndex;\n\
+        uniform sampler2D u_TexSlots[32];\n\
         void main()\n\
         {\n\
-            color = vec4(1.0f, 1.0f, 1.0f, 1.0f);\n\
+            color = texture(u_TexSlots[int(v_TexIndex)], v_TexCoord);\n\
         }";
+
+const char* textureSrc = "res/doom.png";
 
 bool GetShaderCompileStatus(uint32_t shaderID, std::string* info)
 {
@@ -92,6 +116,18 @@ void _CheckGLError(const char* file, int line)
     return;
 }
 
+glm::mat4 GetRotation(float x, float y, float z)
+{
+    return
+    {
+        glm::rotate(glm::mat4(1.0f), glm::radians(x), glm::vec3(1.0f, 0.0f, 0.0f))
+        *
+        glm::rotate(glm::mat4(1.0f), glm::radians(y), glm::vec3(0.0f, 1.0f, 0.0f))
+        *
+        glm::rotate(glm::mat4(1.0f), glm::radians(z), glm::vec3(0.0f, 0.0f, 1.0f))
+    };
+}
+
 void ImGuiRender()
 {
     ImGui::Begin("finestra");
@@ -131,21 +167,71 @@ int main()
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init();
 
-    Vec2 vertexBufferData[] =
+    glm::mat4 model = 
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 1.0f))
+        *
+        GetRotation(0.0f, 0.0f, 0.0f)
+        *
+        glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, 1.0f, 1.0f));
+    
+    glm::mat4 view = 
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f))
+        *
+        GetRotation(0.0f, 0.0f, 0.0f);
+    
+    glm::mat4 proj = glm::perspectiveLH(glm::radians(90.0f), 1.0f, 0.1f, 1000.0f);
+
+    glm::mat4 mvp = proj * view * model;
+
+    Vertex vertexBufferData[] =
     {
-        { -0.5f, -0.5f },
-        {  0.5f, -0.5f },
-        {  0.0f,  0.5f }
+        { -0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f },
+        {  0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f },
+        {  0.5f,  0.5f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f },
+        { -0.5f,  0.5f, 0.0f, 1.0f, 0.0f, 0.6f, 0.6f, 0.0f, 0.0f, 0.0f }
     };
+
+    for (int i = 0; i < sizeof(vertexBufferData) / sizeof(Vertex); i++)
+    {
+        glm::vec4 x;
+        x.x = vertexBufferData[i].Position.X;
+        x.y = vertexBufferData[i].Position.Y;
+        x.z = vertexBufferData[i].Position.Z;
+        x.w = vertexBufferData[i].Position.W;
+
+        glm::vec4 mul = mvp * x;
+
+        vertexBufferData[i].Position.X = mul.x;
+        vertexBufferData[i].Position.Y = mul.y;
+        vertexBufferData[i].Position.Z = mul.z;
+        vertexBufferData[i].Position.W = mul.w;
+    }
 
     uint32_t indexBufferData[]
     {
-        0,1,2
+        0, 1, 2,
+        2, 3, 0
     };
 
     uint32_t vao = 0;
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
+
+    int x, y, channels;
+    stbi_uc* textureData = stbi_load(textureSrc, &x, &y, &channels, 4);
+
+    uint32_t texture;
+    glGenTextures(1, &texture);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE, textureData);
+
+    stbi_image_free(textureData);
 
     uint32_t vertexShader = glCreateShader(GL_VERTEX_SHADER);
     uint32_t pixelShader = glCreateShader(GL_FRAGMENT_SHADER);
@@ -154,8 +240,14 @@ int main()
     glShaderSource(vertexShader, 1, &vertexShaderSrc, nullptr);
     glCompileShader(vertexShader);
 
+    std::string vErr;
+    GetShaderCompileStatus(vertexShader, &vErr);
+
     glShaderSource(pixelShader, 1, &pixelShaderSrc, nullptr);
     glCompileShader(pixelShader);
+
+    std::string pErr;
+    GetShaderCompileStatus(pixelShader, &pErr);
 
     glAttachShader(shaderProgram, vertexShader);
     glAttachShader(shaderProgram, pixelShader);
@@ -164,6 +256,11 @@ int main()
 
     glUseProgram(shaderProgram);
 
+    auto loc = glGetUniformLocation(shaderProgram, "u_TexSlots");
+    int samplers[2] = { 0, 1, };
+    glUniform1iv(loc, 2, samplers);
+
+
     uint32_t vertexBuffer = 0;
     glGenBuffers(1, &vertexBuffer);
     glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
@@ -171,12 +268,25 @@ int main()
 
 
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vec2), 0);
+    glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
+    
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)sizeof(Vec4));
+    
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*) (sizeof(Vec4) + sizeof(Vec3)));
+    
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)(sizeof(Vec4) + sizeof(Vec3) + sizeof(Vec2)));
+
+    auto err = glGetError();
 
     uint32_t indexBuffer = 0;
     glGenBuffers(1, &indexBuffer);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indexBufferData), indexBufferData, GL_STATIC_DRAW);
+
+
 
     /* Loop until the user closes the window */
     while (!glfwWindowShouldClose(window))
@@ -194,7 +304,7 @@ int main()
 
         glClear(GL_COLOR_BUFFER_BIT);
         
-        glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_INT, nullptr);
+        glDrawElements(GL_TRIANGLES, sizeof(indexBufferData) / sizeof(uint32_t), GL_UNSIGNED_INT, nullptr);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
