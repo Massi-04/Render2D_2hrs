@@ -29,7 +29,7 @@ struct Vec4
 
 struct Vertex
 {
-    Vec4 Position;
+    Vec3 Position;
     Vec3 Color;
     Vec2 TextureCoordinates;
     float TextureIndex;
@@ -38,16 +38,18 @@ struct Vertex
 const char* vertexShaderSrc = "\
         #version 330 core\n\
         \n\
-        layout(location = 0) in vec4 position;\n\
+        layout(location = 0) in vec3 position;\n\
         layout(location = 1) in vec3 color;\n\
         layout(location = 2) in vec2 texCoords;\n\
         layout(location = 3) in float texIndex;\n\
         out vec3 v_Color;\n\
         out vec2 v_TexCoord;\n\
         out float v_TexIndex;\n\
+        uniform mat4 u_View;\n\
+        uniform mat4 u_Proj;\n\
         void main()\n\
         {\n\
-            gl_Position = position;\n\
+            gl_Position = u_Proj * u_View * vec4(position, 1.0f);\n\
             v_Color = color;\n\
             v_TexCoord = texCoords;\n\
             v_TexIndex = texIndex;\n\
@@ -166,45 +168,43 @@ int main()
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init();
-
-    glm::mat4 model = 
-        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 1.0f))
-        *
-        GetRotation(0.0f, 0.0f, 0.0f)
-        *
-        glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, 1.0f, 1.0f));
     
-    glm::mat4 view = 
-        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f))
+    glm::mat4 view =
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, .5f))
         *
         GetRotation(0.0f, 0.0f, 0.0f);
-    
-    glm::mat4 proj = glm::perspectiveLH(glm::radians(90.0f), 1.0f, 0.1f, 1000.0f);
 
-    glm::mat4 mvp = proj * view * model;
+    glm::mat4 proj = glm::perspectiveLH(glm::radians(120.0f), 1.0f, 0.1f, 10000.0f);
 
     Vertex vertexBufferData[] =
     {
-        { -0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f },
-        {  0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f },
-        {  0.5f,  0.5f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f },
-        { -0.5f,  0.5f, 0.0f, 1.0f, 0.0f, 0.6f, 0.6f, 0.0f, 0.0f, 0.0f }
+        { -0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f },
+        {  0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f },
+        {  0.5f,  0.5f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f },
+        { -0.5f,  0.5f, 0.0f, 0.0f, 0.6f, 0.6f, 0.0f, 0.0f, 0.0f }
     };
 
     for (int i = 0; i < sizeof(vertexBufferData) / sizeof(Vertex); i++)
     {
-        glm::vec4 x;
-        x.x = vertexBufferData[i].Position.X;
-        x.y = vertexBufferData[i].Position.Y;
-        x.z = vertexBufferData[i].Position.Z;
-        x.w = vertexBufferData[i].Position.W;
+        glm::mat4 model = 
+            glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f))
+            *
+            GetRotation(0.0f, 0.0f, 0.0f)
+            *
+            glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, 1.0f, 1.0f));
 
-        glm::vec4 mul = mvp * x;
+        glm::vec4 loc;
 
-        vertexBufferData[i].Position.X = mul.x;
-        vertexBufferData[i].Position.Y = mul.y;
-        vertexBufferData[i].Position.Z = mul.z;
-        vertexBufferData[i].Position.W = mul.w;
+        loc.x = vertexBufferData[i].Position.X;
+        loc.y = vertexBufferData[i].Position.Y;
+        loc.z = vertexBufferData[i].Position.Z;
+        loc.w = 1.0f;
+
+        glm::vec3 res = model * loc;
+
+        vertexBufferData[i].Position.X = res.x;
+        vertexBufferData[i].Position.Y = res.y;
+        vertexBufferData[i].Position.Z = res.z;
     }
 
     uint32_t indexBufferData[]
@@ -260,6 +260,11 @@ int main()
     int samplers[2] = { 0, 1, };
     glUniform1iv(loc, 2, samplers);
 
+    auto loc2 = glGetUniformLocation(shaderProgram, "u_View");
+    glUniformMatrix4fv(loc2, 1, GL_FALSE, glm::value_ptr(view));
+
+    auto loc3 = glGetUniformLocation(shaderProgram, "u_Proj");
+    glUniformMatrix4fv(loc3, 1, GL_FALSE, glm::value_ptr(proj));
 
     uint32_t vertexBuffer = 0;
     glGenBuffers(1, &vertexBuffer);
@@ -268,16 +273,16 @@ int main()
 
 
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
     
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)sizeof(Vec4));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)sizeof(Vec3));
     
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*) (sizeof(Vec4) + sizeof(Vec3)));
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*) (sizeof(Vec3) + sizeof(Vec3)));
     
     glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)(sizeof(Vec4) + sizeof(Vec3) + sizeof(Vec2)));
+    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)(sizeof(Vec3) + sizeof(Vec3) + sizeof(Vec2)));
 
     auto err = glGetError();
 
