@@ -12,6 +12,7 @@
 
 #include "Shader.h"
 #include "Texture.h"
+#include "Buffer.h"
 
 struct Vec2
 {
@@ -102,7 +103,7 @@ int main()
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init();
-    
+
     glm::mat4 view =
         glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, .5f))
         *
@@ -120,7 +121,7 @@ int main()
 
     for (int i = 0; i < sizeof(vertexBufferData) / sizeof(Vertex); i++)
     {
-        glm::mat4 model = 
+        glm::mat4 model =
             glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f))
             *
             GetRotation(0.0f, 0.0f, 0.0f)
@@ -159,35 +160,19 @@ int main()
     s->SetUniformMat4("u_View", 1, glm::value_ptr(view), false);
     s->SetUniformMat4("u_Proj", 1, glm::value_ptr(proj), false);
 
-    uint32_t vao = 0;
-    glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
 
-    uint32_t vertexBuffer = 0;
-    glGenBuffers(1, &vertexBuffer);
-    glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertexBufferData), vertexBufferData, GL_STATIC_DRAW);
+    VertexBuffer* vertexBuffer = new VertexBuffer((float*)&vertexBufferData, sizeof(vertexBufferData));
+    IndexBuffer* indexBuffer = new IndexBuffer(indexBufferData, sizeof(indexBufferData));
 
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
-    
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)sizeof(Vec3));
-    
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*) (sizeof(Vec3) + sizeof(Vec3)));
-    
-    glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)(sizeof(Vec3) + sizeof(Vec3) + sizeof(Vec2)));
+    vertexBuffer->SetLayout
+    ({
+        { ShaderDataType::Float3, false },
+        { ShaderDataType::Float3, false },
+        { ShaderDataType::Float2, false },
+        { ShaderDataType::Float, false }
+    });
 
-    auto err = glGetError();
-
-    uint32_t indexBuffer = 0;
-    glGenBuffers(1, &indexBuffer);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBuffer);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indexBufferData), indexBufferData, GL_STATIC_DRAW);
-
-
+    VertexArray* vertexArray = new VertexArray(vertexBuffer, indexBuffer);
 
     /* Loop until the user closes the window */
     while (!glfwWindowShouldClose(window))
