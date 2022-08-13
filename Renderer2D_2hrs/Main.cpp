@@ -111,12 +111,14 @@ int main()
 
     glm::mat4 proj = glm::perspectiveLH(glm::radians(120.0f), 1.0f, 0.1f, 10000.0f);
 
+    float textureIndex = 1.0f;
+
     Vertex vertexBufferData[] =
     {
-        { -0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f },
-        {  0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f },
-        {  0.5f,  0.5f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f },
-        { -0.5f,  0.5f, 0.0f, 0.0f, 0.6f, 0.6f, 0.0f, 0.0f, 1.0f }
+        { -0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, textureIndex },
+        {  0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, textureIndex },
+        {  0.5f,  0.5f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, textureIndex },
+        { -0.5f,  0.5f, 0.0f, 0.0f, 0.6f, 0.6f, 0.0f, 0.0f, textureIndex }
     };
 
     for (int i = 0; i < sizeof(vertexBufferData) / sizeof(Vertex); i++)
