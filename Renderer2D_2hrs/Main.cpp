@@ -113,10 +113,10 @@ int main()
 
     Vertex vertexBufferData[] =
     {
-        { -0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f },
-        {  0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f },
-        {  0.5f,  0.5f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f },
-        { -0.5f,  0.5f, 0.0f, 0.0f, 0.6f, 0.6f, 0.0f, 0.0f, 0.0f }
+        { -0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f },
+        {  0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f },
+        {  0.5f,  0.5f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f },
+        { -0.5f,  0.5f, 0.0f, 0.0f, 0.6f, 0.6f, 0.0f, 0.0f, 1.0f }
     };
 
     for (int i = 0; i < sizeof(vertexBufferData) / sizeof(Vertex); i++)
@@ -151,8 +151,23 @@ int main()
     Shader* s = Shader::FromFile("res/vertex.txt", "res/fragment.txt");
     s->Bind();
 
+    Texture* whiteTexture;
+
+    { // default white texture, if you want no texture you use the white texture and only the color will be shown
+        uint32_t red = 0b11111111;
+        uint32_t green = 0b11111111;
+        uint32_t blue = 0b11111111;
+        uint32_t alpha = 0b11111111;
+
+        uint32_t rgba = alpha << 24 | blue << 16 | green << 8 | red;
+        unsigned char* ptr = (unsigned char*)&rgba;
+        whiteTexture = new Texture(1, 1, 4, ptr);
+    }
+
+    whiteTexture->Bind(0);
+
     Texture* t = Texture::FromFile("res/doom.png");
-    t->Bind(0);
+    t->Bind(1);
 
     int samplers[2] = { 0, 1, };
     s->SetUniform1iv("u_TexSlots", 2, samplers);
