@@ -156,10 +156,10 @@ int main()
     Texture* whiteTexture;
 
     { // default white texture, if you want no texture you use the white texture and only the color will be shown
-        uint32_t red = 0b11111111;
-        uint32_t green = 0b11111111;
-        uint32_t blue = 0b11111111;
-        uint32_t alpha = 0b11111111;
+        unsigned char red = 0b11111111;
+        unsigned char green = 0b11111111;
+        unsigned char blue = 0b11111111;
+        unsigned char alpha = 0b11111111;
 
         uint32_t rgba = alpha << 24 | blue << 16 | green << 8 | red;
         unsigned char* ptr = (unsigned char*)&rgba;
