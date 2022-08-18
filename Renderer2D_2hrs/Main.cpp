@@ -105,7 +105,7 @@ int main()
     ImGui_ImplOpenGL3_Init();
 
     glm::mat4 view =
-        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, .5f))
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 1.0f))
         *
         GetRotation(0.0f, 0.0f, 0.0f);
 
@@ -126,7 +126,7 @@ int main()
         glm::mat4 model =
             glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f))
             *
-            GetRotation(0.0f, 0.0f, 0.0f)
+            GetRotation(0.0f, 25.0f, 0.0f)
             *
             glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, 1.0f, 1.0f));
 
