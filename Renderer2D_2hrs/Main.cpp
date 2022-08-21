@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string>
 
 #include "GL/glew.h"
 #include "GLFW/glfw3.h"
@@ -17,16 +18,43 @@
 struct Vec2
 {
     float X, Y;
+
+    operator glm::vec2() const
+    {
+        return glm::vec2(X, Y);
+    }
 };
 
 struct Vec3
 {
     float X, Y, Z;
+    
+    operator glm::vec3() const
+    {
+        return glm::vec3(X, Y, Z);
+    }
+
+    operator glm::vec4() const
+    {
+        return glm::vec4(X, Y, Z, 1.0f);
+    }
 };
 
 struct Vec4
 {
     float X, Y, Z, W;
+
+    operator glm::vec4() const
+    {
+        return glm::vec4(X, Y, Z, W);
+    }
+};
+
+struct Transform
+{
+    Vec3 Location;
+    Vec3 Rotation;
+    Vec3 Scale;
 };
 
 struct Vertex
@@ -53,15 +81,15 @@ bool GetShaderCompileStatus(uint32_t shaderID, std::string* info)
     return false;
 }
 
-glm::mat4 GetRotation(float x, float y, float z)
+glm::mat4 GetRotation(Vec3 rotation)
 {
     return
     {
-        glm::rotate(glm::mat4(1.0f), glm::radians(x), glm::vec3(1.0f, 0.0f, 0.0f))
+        glm::rotate(glm::mat4(1.0f), glm::radians(rotation.X), glm::vec3(1.0f, 0.0f, 0.0f))
         *
-        glm::rotate(glm::mat4(1.0f), glm::radians(y), glm::vec3(0.0f, 1.0f, 0.0f))
+        glm::rotate(glm::mat4(1.0f), glm::radians(rotation.Y), glm::vec3(0.0f, 1.0f, 0.0f))
         *
-        glm::rotate(glm::mat4(1.0f), glm::radians(z), glm::vec3(0.0f, 0.0f, 1.0f))
+        glm::rotate(glm::mat4(1.0f), glm::radians(rotation.Z), glm::vec3(0.0f, 0.0f, 1.0f))
     };
 }
 
@@ -70,10 +98,88 @@ void ImGuiRender()
     ImGui::Begin("finestra");
     if (ImGui::Button("premimi"))
     {
-        ImGui::Text("siiii");
+        abort(); // lol
     }
     ImGui::End();
 }
+
+float textureIndex = 0.0f;
+
+#define VERTEX_COUNT 4
+#define INDEX_COUNT 6
+
+Vertex vertexBufferData[VERTEX_COUNT] =
+{
+    { -0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, textureIndex },
+    {  0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, textureIndex },
+    {  0.5f,  0.5f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, textureIndex },
+    { -0.5f,  0.5f, 0.0f, 0.0f, 0.6f, 0.6f, 0.0f, 0.0f, textureIndex }
+};
+
+uint32_t indexBufferData[INDEX_COUNT]
+{
+    0, 1, 2,
+    2, 3, 0
+};
+
+Vertex tmpBufferData[VERTEX_COUNT];
+
+Shader* shader;
+VertexBuffer* vBuffer;
+
+struct Camera
+{
+    Transform Transform;
+    float FOV;
+    float AspectRatio;
+};
+
+struct Quad
+{
+    Transform Transform;
+    Vec3 Color;
+    float TextureIndex;
+};
+
+
+void UpdateVertexBufferData(Camera camera, Quad quad)
+{
+
+    // view & projection
+    glm::mat4 view =
+        glm::translate(glm::mat4(1.0f), -(glm::vec3)camera.Transform.Location)
+        *
+        GetRotation(camera.Transform.Rotation);
+
+    glm::mat4 proj = glm::perspectiveLH(glm::radians(camera.FOV), camera.AspectRatio, 0.1f, 10000.0f);
+
+    shader->SetUniformMat4("u_View", 1, glm::value_ptr(view), false);
+    shader->SetUniformMat4("u_Proj", 1, glm::value_ptr(proj), false);
+
+    // model
+    for (int i = 0; i < sizeof(vertexBufferData) / sizeof(Vertex); i++)
+    {
+        glm::mat4 model =
+            glm::translate(glm::mat4(1.0f), (glm::vec3)quad.Transform.Location)
+            *
+            GetRotation(quad.Transform.Rotation)
+            *
+            glm::scale(glm::mat4(1.0f), (glm::vec3)quad.Transform.Scale);
+
+        glm::vec4 loc = (glm::vec4)vertexBufferData[i].Position;
+
+        glm::vec3 res = model * loc;
+
+        tmpBufferData[i].Position = { res.x, res.y, res.z };
+        tmpBufferData[i].Color = quad.Color;
+        tmpBufferData[i].TextureCoordinates = vertexBufferData[i].TextureCoordinates;
+        tmpBufferData[i].TextureIndex = quad.TextureIndex;
+    }
+
+    vBuffer->SetData((float*)tmpBufferData, sizeof(tmpBufferData), 0);
+}
+
+float rot = 0.0f;
 
 int main()
 {
@@ -104,54 +210,8 @@ int main()
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init();
 
-    glm::mat4 view =
-        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 1.0f))
-        *
-        GetRotation(0.0f, 0.0f, 0.0f);
-
-    glm::mat4 proj = glm::perspectiveLH(glm::radians(120.0f), 1.0f, 0.1f, 10000.0f);
-
-    float textureIndex = 1.0f;
-
-    Vertex vertexBufferData[] =
-    {
-        { -0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, textureIndex },
-        {  0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, textureIndex },
-        {  0.5f,  0.5f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, textureIndex },
-        { -0.5f,  0.5f, 0.0f, 0.0f, 0.6f, 0.6f, 0.0f, 0.0f, textureIndex }
-    };
-
-    for (int i = 0; i < sizeof(vertexBufferData) / sizeof(Vertex); i++)
-    {
-        glm::mat4 model =
-            glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f))
-            *
-            GetRotation(0.0f, 25.0f, 0.0f)
-            *
-            glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, 1.0f, 1.0f));
-
-        glm::vec4 loc;
-
-        loc.x = vertexBufferData[i].Position.X;
-        loc.y = vertexBufferData[i].Position.Y;
-        loc.z = vertexBufferData[i].Position.Z;
-        loc.w = 1.0f;
-
-        glm::vec3 res = model * loc;
-
-        vertexBufferData[i].Position.X = res.x;
-        vertexBufferData[i].Position.Y = res.y;
-        vertexBufferData[i].Position.Z = res.z;
-    }
-
-    uint32_t indexBufferData[]
-    {
-        0, 1, 2,
-        2, 3, 0
-    };
-
-    Shader* s = Shader::FromFile("res/vertex.txt", "res/fragment.txt");
-    s->Bind();
+    shader = Shader::FromFile("res/vertex.txt", "res/fragment.txt");
+    shader->Bind();
 
     Texture* whiteTexture;
 
@@ -171,17 +231,14 @@ int main()
     Texture* t = Texture::FromFile("res/doom.png");
     t->Bind(1);
 
-    int samplers[2] = { 0, 1, };
-    s->SetUniform1iv("u_TexSlots", 2, samplers);
-
-    s->SetUniformMat4("u_View", 1, glm::value_ptr(view), false);
-    s->SetUniformMat4("u_Proj", 1, glm::value_ptr(proj), false);
+    int samplers[2] = { 0, 1 };
+    shader->SetUniform1iv("u_TexSlots", 2, samplers);
 
 
-    VertexBuffer* vertexBuffer = new VertexBuffer((float*)&vertexBufferData, sizeof(vertexBufferData));
-    IndexBuffer* indexBuffer = new IndexBuffer(indexBufferData, sizeof(indexBufferData));
+    vBuffer = new VertexBuffer((float*)&tmpBufferData, sizeof(tmpBufferData));
+    IndexBuffer* iBuffer = new IndexBuffer(indexBufferData, sizeof(indexBufferData));
 
-    vertexBuffer->SetLayout
+    vBuffer->SetLayout
     ({
         { ShaderDataType::Float3, false },
         { ShaderDataType::Float3, false },
@@ -189,11 +246,40 @@ int main()
         { ShaderDataType::Float, false }
     });
 
-    VertexArray* vertexArray = new VertexArray(vertexBuffer, indexBuffer);
+    VertexArray* vertexArray = new VertexArray(vBuffer, iBuffer);
 
+    glfwSwapInterval(1);
+
+    float time = 0.0f;
+
+    float rotPerSec = 0.0f;
+
+    Camera cam;
+    cam.AspectRatio = 1.0f;
+    cam.FOV = 120.0f;
+    cam.Transform.Location = { 0.0f, 0.0f, -1.0f };
+    cam.Transform.Rotation = { 0.0f, 0.0f, 0.0f };
+
+    Quad quad;
+#if 0
+    quad.Color = { 0.0f, 0.6f, 1.0f };
+#else
+    quad.Color = { 1.0f, 1.0f, 1.0f };
+#endif
+    quad.TextureIndex = 1.0f;
+    quad.Transform.Location = { 0.0f, 0.0f, 0.0f };
+    quad.Transform.Rotation = { 0.0f, 0.0f, 0.0f };
+    quad.Transform.Scale = { 1.0f, 1.0f, 1.0f };
+ 
     /* Loop until the user closes the window */
     while (!glfwWindowShouldClose(window))
     {
+        float currentTime = glfwGetTime();
+        float deltaTime = currentTime - time;
+        int fps = 1.0f / deltaTime;
+        glfwSetWindowTitle(window, std::to_string(fps).c_str());
+        time = currentTime;
+
         glfwPollEvents();
         /* Poll for and process events */
 
@@ -204,10 +290,26 @@ int main()
         ImGuiRender();
         ImGui::Render();
 
-
         glClear(GL_COLOR_BUFFER_BIT);
+
+        rot += rotPerSec * deltaTime;
+        if (rot > 360.0f)
+            rot = 0.0f;
+
+        quad.Transform.Rotation.Y = rot;
+
+        if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+        {
+            quad.TextureIndex = 0.0f;
+        }
+        else
+        {
+            quad.TextureIndex = 1.0f;
+        }
+
+        UpdateVertexBufferData(cam, quad);
         
-        glDrawElements(GL_TRIANGLES, sizeof(indexBufferData) / sizeof(uint32_t), GL_UNSIGNED_INT, nullptr);
+        glDrawElements(GL_TRIANGLES, INDEX_COUNT, GL_UNSIGNED_INT, nullptr);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
