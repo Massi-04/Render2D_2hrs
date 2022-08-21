@@ -605,7 +605,6 @@
     <None Include="libs\include\glm\gtx\wrap.inl" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="res\doom.jpg" />
     <Image Include="res\doom.png" />
   </ItemGroup>
   <ItemGroup>

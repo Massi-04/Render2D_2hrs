@@ -15,6 +15,8 @@
 #include "Texture.h"
 #include "Buffer.h"
 
+#include <Windows.h>
+
 struct Vec2
 {
     float X, Y;
@@ -37,6 +39,11 @@ struct Vec3
     operator glm::vec4() const
     {
         return glm::vec4(X, Y, Z, 1.0f);
+    }
+
+    Vec3 operator-() const
+    {
+        return { -X, -Y, -Z };
     }
 };
 
@@ -62,6 +69,20 @@ struct Vertex
     Vec3 Position;
     Vec3 Color;
     Vec2 TextureCoordinates;
+    float TextureIndex;
+};
+
+struct Camera
+{
+    Transform Transform;
+    float FOV;
+    float AspectRatio;
+};
+
+struct Quad
+{
+    Transform Transform;
+    Vec3 Color;
     float TextureIndex;
 };
 
@@ -93,13 +114,87 @@ glm::mat4 GetRotation(Vec3 rotation)
     };
 }
 
+#define WND_WIDTH 1600
+#define WND_HEIGHT 900
+
+float totalTime = 0.0f;
+float deltaTime = 0.0f;
+
+float rotPerSec = 50.0f;
+
+Quad quad;
+
+#define SUBMENU(MenuName, Code)\
+if(ImGui::CollapsingHeader(MenuName, ImGuiTreeNodeFlags_DefaultOpen)) \
+{ \
+    ImGui::Spacing(); \
+    ImGui::Spacing(); \
+    Code \
+}\
+ImGui::Spacing(); \
+ImGui::Spacing();
+
 void ImGuiRender()
 {
-    ImGui::Begin("finestra");
+    ImGui::Begin("Settings");
+
+    SUBMENU
+    (
+        "Tips / Help",
+        {
+            ImGui::Text("- Tieni premuto \"E\" per rimuovere la texture");
+        }
+    );
+
+    SUBMENU
+    (
+        "Texture color",
+        {
+            ImGui::PushItemWidth(200);
+            ImGui::ColorPicker3("no texture color", &quad.Color.X, 0);
+            ImGui::PopItemWidth();
+        }
+    );
+
+    SUBMENU
+    (
+        "Quad transform",
+        {
+            ImGui::DragFloat3("Location", &quad.Transform.Location.X, 0.01f);
+            ImGui::DragFloat3("Rotation", &quad.Transform.Rotation.X, 0.01f);
+            ImGui::DragFloat3("Scale", &(quad.Transform.Scale.X), .01f, 0.01f, 1000.0f, "%.3f", 0);
+        }
+    );
+
+    SUBMENU
+    (
+        "Script",
+        {
+            ImGui::DragFloat("Rotation speed (deg/s)", &rotPerSec);
+        }
+    );
+
+    SUBMENU
+    (
+        "Info",
+        {
+            ImGui::Text((char*)glGetString(GL_VENDOR));
+            ImGui::Text((char*)glGetString(GL_RENDERER));
+            ImGui::Text((char*)glGetString(GL_VERSION));
+            ImGui::Spacing();
+            ImGui::Text("Frametime: %.3f ms (%i FPS )", deltaTime * 1000, (int32_t)(1.0f / deltaTime));
+        }
+    );
+    
+    ImGui::End();
+
+    
+    ImGui::Begin("lol");
     if (ImGui::Button("premimi"))
     {
+        MessageBoxA(nullptr, "LOL", "lol", MB_OK | MB_SYSTEMMODAL | MB_ICONERROR);
         abort(); // lol
-    }
+    }   
     ImGui::End();
 }
 
@@ -127,20 +222,6 @@ Vertex tmpBufferData[VERTEX_COUNT];
 Shader* shader;
 VertexBuffer* vBuffer;
 
-struct Camera
-{
-    Transform Transform;
-    float FOV;
-    float AspectRatio;
-};
-
-struct Quad
-{
-    Transform Transform;
-    Vec3 Color;
-    float TextureIndex;
-};
-
 
 void UpdateVertexBufferData(Camera camera, Quad quad)
 {
@@ -149,7 +230,7 @@ void UpdateVertexBufferData(Camera camera, Quad quad)
     glm::mat4 view =
         glm::translate(glm::mat4(1.0f), -(glm::vec3)camera.Transform.Location)
         *
-        GetRotation(camera.Transform.Rotation);
+        GetRotation(-camera.Transform.Rotation);
 
     glm::mat4 proj = glm::perspectiveLH(glm::radians(camera.FOV), camera.AspectRatio, 0.1f, 10000.0f);
 
@@ -190,7 +271,7 @@ int main()
         return -1;
 
     /* Create a windowed mode window and its OpenGL context */
-    window = glfwCreateWindow(900, 900, "Hello World", NULL, NULL);
+    window = glfwCreateWindow(WND_WIDTH, WND_HEIGHT, "Hello World", NULL, NULL);
     if (!window)
     {
         glfwTerminate();
@@ -250,35 +331,24 @@ int main()
 
     glfwSwapInterval(1);
 
-    float time = 0.0f;
-
-    float rotPerSec = 0.0f;
-
     Camera cam;
-    cam.AspectRatio = 1.0f;
+    cam.AspectRatio = (float)WND_WIDTH / WND_HEIGHT;
     cam.FOV = 120.0f;
     cam.Transform.Location = { 0.0f, 0.0f, -1.0f };
     cam.Transform.Rotation = { 0.0f, 0.0f, 0.0f };
 
-    Quad quad;
-#if 0
-    quad.Color = { 0.0f, 0.6f, 1.0f };
-#else
     quad.Color = { 1.0f, 1.0f, 1.0f };
-#endif
     quad.TextureIndex = 1.0f;
     quad.Transform.Location = { 0.0f, 0.0f, 0.0f };
     quad.Transform.Rotation = { 0.0f, 0.0f, 0.0f };
     quad.Transform.Scale = { 1.0f, 1.0f, 1.0f };
- 
+
     /* Loop until the user closes the window */
     while (!glfwWindowShouldClose(window))
     {
         float currentTime = glfwGetTime();
-        float deltaTime = currentTime - time;
-        int fps = 1.0f / deltaTime;
-        glfwSetWindowTitle(window, std::to_string(fps).c_str());
-        time = currentTime;
+        deltaTime = currentTime - totalTime;
+        totalTime = currentTime;
 
         glfwPollEvents();
         /* Poll for and process events */
@@ -292,11 +362,7 @@ int main()
 
         glClear(GL_COLOR_BUFFER_BIT);
 
-        rot += rotPerSec * deltaTime;
-        if (rot > 360.0f)
-            rot = 0.0f;
-
-        quad.Transform.Rotation.Y = rot;
+        quad.Transform.Rotation.Y += rotPerSec * deltaTime;
 
         if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
         {
