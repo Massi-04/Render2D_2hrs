@@ -86,22 +86,6 @@ struct Quad
     float TextureIndex;
 };
 
-bool GetShaderCompileStatus(uint32_t shaderID, std::string* info)
-{
-    int compileResult = 0;
-    glGetShaderiv(shaderID, GL_COMPILE_STATUS, &compileResult);
-    if (compileResult == GL_TRUE)
-        return true; // no errors
-    int msgLen;
-    glGetShaderiv(shaderID, GL_INFO_LOG_LENGTH, &msgLen);
-    char* msg = new char[msgLen];
-    glGetShaderInfoLog(shaderID, msgLen, &msgLen, msg);
-    if (info != nullptr)
-        *info = msg;
-    delete[] msg;
-    return false;
-}
-
 glm::mat4 GetRotation(Vec3 rotation)
 {
     return
@@ -117,12 +101,233 @@ glm::mat4 GetRotation(Vec3 rotation)
 #define WND_WIDTH 1600
 #define WND_HEIGHT 900
 
+#define MAX_QUAD_BATCH 5000
+
+GLFWwindow* window;
+
+uint32_t MaxQuads = 0;
+uint32_t MaxVertices = 0;
+uint32_t MaxIndices = 0;
+
+uint32_t quadCount = 0;
+
+uint32_t drawCalls = 0;
+
+Vertex* vertexBufferData;
+uint32_t* indexBufferData;
+
+VertexArray* vertexArray;
+VertexBuffer* vBuffer;
+IndexBuffer* iBuffer;
+Shader* shader;
+Texture* whiteTexture;
+
+const Vec3 QuadVertices[] =
+{
+    { -0.5f, -0.5f, 0.0f },
+    {  0.5f, -0.5f, 0.0f },
+    {  0.5f,  0.5f, 0.0f },
+    { -0.5f,  0.5f, 0.0f }
+};
+
+const Vec2 QuadTextCoords[] =
+{
+    { 0.0f, 1.0f },
+    { 1.0f, 1.0f },
+    { 1.0f, 0.0f },
+    { 0.0f, 0.0f }
+};
+
+glm::mat4 view;
+glm::mat4 proj;
+
+bool Init()
+{
+    /* Initialize the library */
+    if (!glfwInit())
+        return false;
+
+    /* Create a windowed mode window and its OpenGL context */
+    window = glfwCreateWindow(WND_WIDTH, WND_HEIGHT, "Mhanz", NULL, NULL);
+    if (!window)
+    {
+        glfwTerminate();
+        return false;
+    }
+
+    /* Make the window's context current */
+    glfwMakeContextCurrent(window);
+
+    if (glewInit() != GLEW_OK)
+    {
+        return false;
+    }
+
+    ImGui::CreateContext();
+
+    if (!ImGui_ImplGlfw_InitForOpenGL(window, true))
+        return false;
+
+    if (!ImGui_ImplOpenGL3_Init())
+        return false;
+    
+    return true;
+}
+
+void Shutdown()
+{
+    glfwTerminate();
+}
+
+void InitRenderer(uint32_t maxQuads)
+{
+    MaxQuads = maxQuads;
+    MaxVertices = MaxQuads * 4;
+    MaxIndices = MaxQuads * 6;
+
+    quadCount = 0;
+
+    vertexBufferData = (Vertex*)malloc(sizeof(Vertex) * MaxVertices);
+    indexBufferData = (uint32_t*)malloc(sizeof(uint32_t) * MaxIndices);
+
+    for (int i = 0, offset = 0, valOffset = 0; i < MaxQuads; i++, offset += 6, valOffset = 4 * i)
+    {
+        indexBufferData[0 + offset] = 0 + valOffset;
+        indexBufferData[1 + offset] = 1 + valOffset;
+        indexBufferData[2 + offset] = 2 + valOffset;
+        indexBufferData[3 + offset] = 2 + valOffset;
+        indexBufferData[4 + offset] = 3 + valOffset;
+        indexBufferData[5 + offset] = 0 + valOffset;
+    }
+
+    vBuffer = new VertexBuffer(nullptr, sizeof(Vertex) * MaxVertices);
+    iBuffer = new IndexBuffer(indexBufferData, sizeof(uint32_t) * MaxIndices);
+    shader = Shader::FromFile("res/vertex.txt", "res/fragment.txt");
+
+    shader->Bind();
+
+    vBuffer->SetLayout
+    ({
+        { ShaderDataType::Float3, false },
+        { ShaderDataType::Float3, false },
+        { ShaderDataType::Float2, false },
+        { ShaderDataType::Float, false }
+    });
+
+    vertexArray = new VertexArray(vBuffer, iBuffer);
+    vertexArray->Bind();
+
+    uint32_t rgba = 0xffffffff; // white texture
+    unsigned char* ptr = (unsigned char*)&rgba;
+    
+    whiteTexture = new Texture(1, 1, 4, ptr);
+    whiteTexture->Bind(0);
+
+    int samplers[16];
+    for (int i = 0; i < 16; i++)
+        samplers[i] = i;
+    shader->SetUniform1iv("u_TexSlots", 16, samplers);
+}
+
+void ShutdownRenderer()
+{
+    delete[] vertexBufferData;
+    delete[] indexBufferData;
+
+    delete vBuffer;
+    delete iBuffer;
+}
+
+void ImGuiRender();
+
+void BeginScene(Camera camera)
+{
+    drawCalls = 0;
+
+    glfwPollEvents();
+
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+    
+    glEnable(GL_DEPTH_TEST);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    view =  glm::translate(glm::mat4(1.0f), -(glm::vec3)camera.Transform.Location)
+            *
+            GetRotation(-camera.Transform.Rotation);
+
+    proj = glm::perspectiveLH(glm::radians(camera.FOV), camera.AspectRatio, 0.1f, 10000.0f);
+}
+
+void Flush()
+{
+    uint32_t indexCount = quadCount * 6;
+
+    shader->SetUniformMat4("u_View", 1, glm::value_ptr(view), false);
+    shader->SetUniformMat4("u_Proj", 1, glm::value_ptr(proj), false);
+
+    vBuffer->SetData((float*)vertexBufferData, sizeof(Vertex) * 4 * quadCount, 0);
+
+    glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, nullptr);
+
+    quadCount = 0;
+
+    drawCalls++;
+}
+
+void DrawQuad(Quad quad)
+{
+    glm::mat4 model =
+        glm::translate(glm::mat4(1.0f), (glm::vec3)quad.Transform.Location)
+        *
+        GetRotation(quad.Transform.Rotation)
+        *
+        glm::scale(glm::mat4(1.0f), (glm::vec3)quad.Transform.Scale);
+
+
+    for (int i = 0; i < 4; i++)
+    {
+        uint32_t vertexIndex = quadCount * 4;
+
+        glm::vec4 loc = QuadVertices[i];
+        glm::vec3 res = model * loc;
+
+        vertexBufferData[i + vertexIndex].Position = { res.x, res.y, res.z };
+        vertexBufferData[i + vertexIndex].Color = quad.Color;
+        vertexBufferData[i + vertexIndex].TextureCoordinates = QuadTextCoords[i];
+        vertexBufferData[i + vertexIndex].TextureIndex = quad.TextureIndex;
+    }
+
+    quadCount++;
+
+    if (quadCount == MaxQuads)
+    {
+        Flush();
+    }
+}
+
+void EndScene()
+{
+    if (quadCount > 0)
+        Flush();
+
+    glDisable(GL_DEPTH_TEST);
+    ImGuiRender();
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    
+    glfwSwapBuffers(window);
+}
+
 float totalTime = 0.0f;
 float deltaTime = 0.0f;
 
 float rotPerSec = 50.0f;
 
 Quad quad;
+
+Texture* myTexture;
 
 #define SUBMENU(MenuName, Code)\
 if(ImGui::CollapsingHeader(MenuName, ImGuiTreeNodeFlags_DefaultOpen)) \
@@ -183,6 +388,7 @@ void ImGuiRender()
             ImGui::Text((char*)glGetString(GL_VERSION));
             ImGui::Spacing();
             ImGui::Text("Frametime: %.3f ms (%i FPS )", deltaTime * 1000, (int32_t)(1.0f / deltaTime));
+            ImGui::Text("Draw calls: %i", drawCalls);
         }
     );
     
@@ -199,188 +405,70 @@ void ImGuiRender()
 }
 
 float textureIndex = 0.0f;
-
-#define VERTEX_COUNT 4
-#define INDEX_COUNT 6
-
-Vertex vertexBufferData[VERTEX_COUNT] =
-{
-    { -0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, textureIndex },
-    {  0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, textureIndex },
-    {  0.5f,  0.5f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, textureIndex },
-    { -0.5f,  0.5f, 0.0f, 0.0f, 0.6f, 0.6f, 0.0f, 0.0f, textureIndex }
-};
-
-uint32_t indexBufferData[INDEX_COUNT]
-{
-    0, 1, 2,
-    2, 3, 0
-};
-
-Vertex tmpBufferData[VERTEX_COUNT];
-
-Shader* shader;
-VertexBuffer* vBuffer;
-
-
-void UpdateVertexBufferData(Camera camera, Quad quad)
-{
-
-    // view & projection
-    glm::mat4 view =
-        glm::translate(glm::mat4(1.0f), -(glm::vec3)camera.Transform.Location)
-        *
-        GetRotation(-camera.Transform.Rotation);
-
-    glm::mat4 proj = glm::perspectiveLH(glm::radians(camera.FOV), camera.AspectRatio, 0.1f, 10000.0f);
-
-    shader->SetUniformMat4("u_View", 1, glm::value_ptr(view), false);
-    shader->SetUniformMat4("u_Proj", 1, glm::value_ptr(proj), false);
-
-    // model
-    for (int i = 0; i < sizeof(vertexBufferData) / sizeof(Vertex); i++)
-    {
-        glm::mat4 model =
-            glm::translate(glm::mat4(1.0f), (glm::vec3)quad.Transform.Location)
-            *
-            GetRotation(quad.Transform.Rotation)
-            *
-            glm::scale(glm::mat4(1.0f), (glm::vec3)quad.Transform.Scale);
-
-        glm::vec4 loc = (glm::vec4)vertexBufferData[i].Position;
-
-        glm::vec3 res = model * loc;
-
-        tmpBufferData[i].Position = { res.x, res.y, res.z };
-        tmpBufferData[i].Color = quad.Color;
-        tmpBufferData[i].TextureCoordinates = vertexBufferData[i].TextureCoordinates;
-        tmpBufferData[i].TextureIndex = quad.TextureIndex;
-    }
-
-    vBuffer->SetData((float*)tmpBufferData, sizeof(tmpBufferData), 0);
-}
-
 float rot = 0.0f;
 
 int main()
 {
-    GLFWwindow* window;
-
-    /* Initialize the library */
-    if (!glfwInit())
-        return -1;
-
-    /* Create a windowed mode window and its OpenGL context */
-    window = glfwCreateWindow(WND_WIDTH, WND_HEIGHT, "Mhanz", NULL, NULL);
-    if (!window)
+    if (Init())
     {
-        glfwTerminate();
-        return -1;
-    }
+        InitRenderer(MAX_QUAD_BATCH);
 
-    /* Make the window's context current */
-    glfwMakeContextCurrent(window);
+        myTexture = Texture::FromFile("res/doom.png");
+        myTexture->Bind(1);
 
-    if (glewInit() != GLEW_OK)
-    {
-        return -1;
-    }
+        quad.Color = { 1.0f, 1.0f, 1.0f };
+        quad.TextureIndex = 1.0f;
+        quad.Transform.Location = { 0.0f, 0.0f, 0.0f };
+        quad.Transform.Rotation = { 0.0f, 0.0f, 0.0f };
+        quad.Transform.Scale = { 1.0f, 1.0f, 1.0f };
 
-    ImGui::CreateContext();
+        Camera cam;
+        cam.AspectRatio = (float)WND_WIDTH / WND_HEIGHT;
+        cam.FOV = 120.0f;
+        cam.Transform.Location = { 0.0f, 0.0f, -1.0f };
+        cam.Transform.Rotation = { 0.0f, 0.0f, 0.0f };
 
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init();
-
-    shader = Shader::FromFile("res/vertex.txt", "res/fragment.txt");
-    shader->Bind();
-
-    Texture* whiteTexture;
-
-    { // default white texture, if you want no texture you use the white texture and only the color will be shown
-        unsigned char red = 0b11111111;
-        unsigned char green = 0b11111111;
-        unsigned char blue = 0b11111111;
-        unsigned char alpha = 0b11111111;
-
-        uint32_t rgba = alpha << 24 | blue << 16 | green << 8 | red;
-        unsigned char* ptr = (unsigned char*)&rgba;
-        whiteTexture = new Texture(1, 1, 4, ptr);
-    }
-
-    whiteTexture->Bind(0);
-
-    Texture* t = Texture::FromFile("res/doom.png");
-    t->Bind(1);
-
-    int samplers[2] = { 0, 1 };
-    shader->SetUniform1iv("u_TexSlots", 2, samplers);
-
-
-    vBuffer = new VertexBuffer((float*)&tmpBufferData, sizeof(tmpBufferData));
-    IndexBuffer* iBuffer = new IndexBuffer(indexBufferData, sizeof(indexBufferData));
-
-    vBuffer->SetLayout
-    ({
-        { ShaderDataType::Float3, false },
-        { ShaderDataType::Float3, false },
-        { ShaderDataType::Float2, false },
-        { ShaderDataType::Float, false }
-    });
-
-    VertexArray* vertexArray = new VertexArray(vBuffer, iBuffer);
-
-    glfwSwapInterval(1);
-
-    Camera cam;
-    cam.AspectRatio = (float)WND_WIDTH / WND_HEIGHT;
-    cam.FOV = 120.0f;
-    cam.Transform.Location = { 0.0f, 0.0f, -1.0f };
-    cam.Transform.Rotation = { 0.0f, 0.0f, 0.0f };
-
-    quad.Color = { 1.0f, 1.0f, 1.0f };
-    quad.TextureIndex = 1.0f;
-    quad.Transform.Location = { 0.0f, 0.0f, 0.0f };
-    quad.Transform.Rotation = { 0.0f, 0.0f, 0.0f };
-    quad.Transform.Scale = { 1.0f, 1.0f, 1.0f };
-
-    /* Loop until the user closes the window */
-    while (!glfwWindowShouldClose(window))
-    {
-        float currentTime = glfwGetTime();
-        deltaTime = currentTime - totalTime;
-        totalTime = currentTime;
-
-        glfwPollEvents();
-        /* Poll for and process events */
-
-        // imgui "rendering"
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-        ImGuiRender();
-        ImGui::Render();
-
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        quad.Transform.Rotation.Y += rotPerSec * deltaTime;
-
-        if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+        while (!glfwWindowShouldClose(window))
         {
-            quad.TextureIndex = 0.0f;
-        }
-        else
-        {
-            quad.TextureIndex = 1.0f;
+            float currentTime = glfwGetTime();
+            deltaTime = currentTime - totalTime;
+            totalTime = currentTime;
+
+            quad.Transform.Rotation.Y += rotPerSec * deltaTime;
+
+            if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+            {
+                quad.TextureIndex = 0.0f;
+            }
+            else
+            {
+                quad.TextureIndex = 1.0f;
+            }
+
+            BeginScene(cam);
+
+            Quad q2;
+
+            q2.Color = quad.Color;
+            q2.TextureIndex = quad.TextureIndex;
+            q2.Transform = quad.Transform;
+            q2.Transform.Location = { 0.0f, 0.0f, 0.0f };
+
+            DrawQuad(quad);
+            DrawQuad(q2);
+
+
+            EndScene();
         }
 
-        UpdateVertexBufferData(cam, quad);
+        ShutdownRenderer();
+        Shutdown();
         
-        glDrawElements(GL_TRIANGLES, INDEX_COUNT, GL_UNSIGNED_INT, nullptr);
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-        glfwSwapBuffers(window);
+        return 0;
     }
-
-    glfwTerminate();
-    return 0;
+    else
+    {
+        std::cout << "Init error";
+        return -1;
+    }
 }
