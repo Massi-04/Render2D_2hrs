@@ -98,8 +98,11 @@ glm::mat4 GetRotation(Vec3 rotation)
     };
 }
 
-#define WND_WIDTH 1600
-#define WND_HEIGHT 900
+void OnWindowResize(GLFWwindow* window, int width, int height);
+
+
+int WndWidth = 1600;
+int WndHeight = 900;
 
 #define VSYNC 1
 
@@ -150,7 +153,7 @@ bool Init()
         return false;
 
     /* Create a windowed mode window and its OpenGL context */
-    window = glfwCreateWindow(WND_WIDTH, WND_HEIGHT, "Mhanz", NULL, NULL);
+    window = glfwCreateWindow(WndWidth, WndHeight, "Mhanz", NULL, NULL);
     if (!window)
     {
         glfwTerminate();
@@ -166,6 +169,8 @@ bool Init()
     }
 
     glfwSwapInterval(VSYNC);
+
+    glfwSetWindowSizeCallback(window, OnWindowResize);
 
     ImGui::CreateContext();
 
@@ -350,7 +355,7 @@ void ImGuiRender()
     ImGui::Begin("Settings");
 
     ImGui::SetWindowPos({ 0, 0 }, ImGuiCond_Once);
-    ImGui::SetWindowSize({ 400, WND_HEIGHT }, ImGuiCond_Once);
+    ImGui::SetWindowSize({ (float)400, (float) WndHeight }, ImGuiCond_Once);
 
     SUBMENU
     (
@@ -406,7 +411,7 @@ void ImGuiRender()
     
     ImGui::Begin("lol");
 
-    ImGui::SetWindowPos({ WND_WIDTH - 200 - 20, 0 + 20 }, ImGuiCond_Once);
+    ImGui::SetWindowPos({ (float)WndWidth - 200 - 20, 0 + 20 }, ImGuiCond_Once);
     ImGui::SetWindowSize({ 200, 60 }, ImGuiCond_Once);
 
     if (ImGui::Button("premimi"))
@@ -415,6 +420,13 @@ void ImGuiRender()
         abort(); // lol
     }   
     ImGui::End();
+}
+
+void OnWindowResize(GLFWwindow* window, int width, int height)
+{
+    glViewport(0, 0, width, height);
+    WndWidth = width;
+    WndHeight = height;
 }
 
 float textureIndex = 0.0f;
@@ -436,7 +448,6 @@ int main()
         quad.Transform.Scale = { 1.0f, 1.0f, 1.0f };
 
         Camera cam;
-        cam.AspectRatio = (float)WND_WIDTH / WND_HEIGHT;
         cam.FOV = 120.0f;
         cam.Transform.Location = { 0.0f, 0.0f, -1.0f };
         cam.Transform.Rotation = { 0.0f, 0.0f, 0.0f };
@@ -446,6 +457,8 @@ int main()
             float currentTime = glfwGetTime();
             deltaTime = currentTime - totalTime;
             totalTime = currentTime;
+
+            cam.AspectRatio = (float)WndWidth / WndHeight;
 
             quad.Transform.Rotation.Y += rotPerSec * deltaTime;
 
