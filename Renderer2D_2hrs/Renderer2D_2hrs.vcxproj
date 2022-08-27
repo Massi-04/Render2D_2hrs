@@ -463,7 +463,6 @@
     <ClCompile Include="Texture.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="imgui.ini" />
     <None Include="libs\include\glm\detail\func_common.inl" />
     <None Include="libs\include\glm\detail\func_common_simd.inl" />
     <None Include="libs\include\glm\detail\func_exponential.inl" />

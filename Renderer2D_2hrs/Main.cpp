@@ -101,6 +101,8 @@ glm::mat4 GetRotation(Vec3 rotation)
 #define WND_WIDTH 1600
 #define WND_HEIGHT 900
 
+#define VSYNC 1
+
 #define MAX_QUAD_BATCH 5000
 
 GLFWwindow* window;
@@ -163,7 +165,11 @@ bool Init()
         return false;
     }
 
+    glfwSwapInterval(VSYNC);
+
     ImGui::CreateContext();
+
+    ImGui::GetIO().IniFilename = nullptr;
 
     if (!ImGui_ImplGlfw_InitForOpenGL(window, true))
         return false;
@@ -343,6 +349,9 @@ void ImGuiRender()
 {
     ImGui::Begin("Settings");
 
+    ImGui::SetWindowPos({ 0, 0 }, ImGuiCond_Once);
+    ImGui::SetWindowSize({ 400, WND_HEIGHT }, ImGuiCond_Once);
+
     SUBMENU
     (
         "Tips / Help",
@@ -391,11 +400,15 @@ void ImGuiRender()
             ImGui::Text("Draw calls: %i", drawCalls);
         }
     );
-    
+     
     ImGui::End();
 
     
     ImGui::Begin("lol");
+
+    ImGui::SetWindowPos({ WND_WIDTH - 200 - 20, 0 + 20 }, ImGuiCond_Once);
+    ImGui::SetWindowSize({ 200, 60 }, ImGuiCond_Once);
+
     if (ImGui::Button("premimi"))
     {
         MessageBoxA(nullptr, "LOL", "lol", MB_OK | MB_SYSTEMMODAL | MB_ICONERROR);
