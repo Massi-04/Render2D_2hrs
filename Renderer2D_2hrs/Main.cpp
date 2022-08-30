@@ -79,13 +79,6 @@ struct Camera
     float AspectRatio;
 };
 
-struct Quad
-{
-    Transform Transform;
-    Vec3 Color;
-    float TextureIndex;
-};
-
 glm::mat4 GetRotation(Vec3 rotation)
 {
     return
@@ -96,6 +89,33 @@ glm::mat4 GetRotation(Vec3 rotation)
         *
         glm::rotate(glm::mat4(1.0f), glm::radians(rotation.Z), glm::vec3(0.0f, 0.0f, 1.0f))
     };
+}
+
+void GetTextCoordinates(float* coords, float tilingFactor = 1.0f)
+{
+    coords[0] = 0.0f;
+    coords[1] = tilingFactor;
+
+    coords[2] = tilingFactor;
+    coords[3] = tilingFactor;
+
+    coords[4] = tilingFactor;
+    coords[5] = 0.0f;
+
+    coords[6] = 0.0f;
+    coords[7] = 0.0f;
+
+    /*struct Vec2Pack
+    {
+        float x, y;
+    };
+
+    Vec2Pack* data = (Vec2Pack*)coords;
+    
+    data[0] = { 0.0f, tilingFactor };
+    data[1] = { tilingFactor, tilingFactor };
+    data[2] = { tilingFactor, 0.0f };
+    data[3] = { 0.0f, 0.0f };*/
 }
 
 void OnWindowResize(GLFWwindow* window, int width, int height);
@@ -135,13 +155,7 @@ const Vec3 QuadVertices[] =
     { -0.5f,  0.5f, 0.0f }
 };
 
-const Vec2 QuadTextCoords[] =
-{
-    { 0.0f, 1.0f },
-    { 1.0f, 1.0f },
-    { 1.0f, 0.0f },
-    { 0.0f, 0.0f }
-};
+Vec2 QuadTextCoords[4];
 
 glm::mat4 view;
 glm::mat4 proj;
@@ -287,15 +301,16 @@ void Flush()
     drawCalls++;
 }
 
-void DrawQuad(Quad quad)
+void DrawQuad(Transform transform, Vec3 color)
 {
     glm::mat4 model =
-        glm::translate(glm::mat4(1.0f), (glm::vec3)quad.Transform.Location)
+        glm::translate(glm::mat4(1.0f), (glm::vec3)transform.Location)
         *
-        GetRotation(quad.Transform.Rotation)
+        GetRotation(transform.Rotation)
         *
-        glm::scale(glm::mat4(1.0f), (glm::vec3)quad.Transform.Scale);
+        glm::scale(glm::mat4(1.0f), (glm::vec3)transform.Scale);
 
+   // GetTextCoordinates((float*)QuadTextCoords, tilingFactor);
 
     for (int i = 0; i < 4; i++)
     {
@@ -305,10 +320,44 @@ void DrawQuad(Quad quad)
         glm::vec3 res = model * loc;
 
         vertexBufferData[i + vertexIndex].Position = { res.x, res.y, res.z };
-        vertexBufferData[i + vertexIndex].Color = quad.Color;
-        vertexBufferData[i + vertexIndex].TextureCoordinates = QuadTextCoords[i];
-        vertexBufferData[i + vertexIndex].TextureIndex = quad.TextureIndex;
+        vertexBufferData[i + vertexIndex].Color = color;
+        vertexBufferData[i + vertexIndex].TextureIndex = -1.0f;
+        //vertexBufferData[i + vertexIndex].TextureCoordinates = QuadTextCoords[i];
     }
+
+    quadCount++;
+
+    if (quadCount == MaxQuads)
+    {
+        Flush();
+    }
+}
+
+void DrawQuadTextured(Transform transform, float textureIndex, float tilingFactor = 1.0f, Vec3 colorTint = { 1.0f, 1.0f, 1.0f })
+{
+    glm::mat4 model =
+        glm::translate(glm::mat4(1.0f), (glm::vec3)transform.Location)
+        *
+        GetRotation(transform.Rotation)
+        *
+        glm::scale(glm::mat4(1.0f), (glm::vec3)transform.Scale);
+
+    GetTextCoordinates((float*)QuadTextCoords, tilingFactor);
+
+    for (int i = 0; i < 4; i++)
+    {
+        uint32_t vertexIndex = quadCount * 4;
+
+        glm::vec4 loc = QuadVertices[i];
+        glm::vec3 res = model * loc;
+
+        vertexBufferData[i + vertexIndex].Position = { res.x, res.y, res.z };
+        vertexBufferData[i + vertexIndex].Color = colorTint;
+        vertexBufferData[i + vertexIndex].TextureCoordinates = QuadTextCoords[i];
+        vertexBufferData[i + vertexIndex].TextureIndex = textureIndex;
+    }
+
+    // todo texture binding, finding ecc.. if we exeed 16 slots bla bla
 
     quadCount++;
 
@@ -335,8 +384,10 @@ float totalTime = 0.0f;
 float deltaTime = 0.0f;
 
 float rotPerSec = 50.0f;
+float tilingFactor = 1.0f;
 
-Quad quad;
+Transform mainQuadTransform = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f} };
+Vec3 mainQuadColor = { 1.0f, 1.0f, 1.0f };
 
 Texture* myTexture;
 
@@ -370,7 +421,7 @@ void ImGuiRender()
         "Texture color",
         {
             ImGui::PushItemWidth(200);
-            ImGui::ColorPicker3("no texture color", &quad.Color.X, 0);
+            ImGui::ColorPicker3("no texture color", &mainQuadColor.X, 0);
             ImGui::PopItemWidth();
         }
     );
@@ -379,9 +430,9 @@ void ImGuiRender()
     (
         "Quad transform",
         {
-            ImGui::DragFloat3("Location", &quad.Transform.Location.X, 0.01f);
-            ImGui::DragFloat3("Rotation", &quad.Transform.Rotation.X, 0.01f);
-            ImGui::DragFloat3("Scale", &(quad.Transform.Scale.X), .01f, 0.01f, 1000.0f, "%.3f", 0);
+            ImGui::DragFloat3("Location", &mainQuadTransform.Location.X, 0.01f);
+            ImGui::DragFloat3("Rotation", &mainQuadTransform.Rotation.X, 0.01f);
+            ImGui::DragFloat3("Scale", &mainQuadTransform.Scale.X, .01f, 0.01f, 1000.0f, "%.3f", 0);
         }
     );
 
@@ -390,6 +441,7 @@ void ImGuiRender()
         "Script",
         {
             ImGui::DragFloat("Rotation speed (deg/s)", &rotPerSec);
+            ImGui::DragFloat("Texture tiling factor", &tilingFactor, 0.5f);
         }
     );
 
@@ -441,12 +493,6 @@ int main()
         myTexture = Texture::FromFile("res/doom.png");
         myTexture->Bind(1);
 
-        quad.Color = { 1.0f, 1.0f, 1.0f };
-        quad.TextureIndex = 1.0f;
-        quad.Transform.Location = { 0.0f, 0.0f, 0.0f };
-        quad.Transform.Rotation = { 0.0f, 0.0f, 0.0f };
-        quad.Transform.Scale = { 1.0f, 1.0f, 1.0f };
-
         Camera cam;
         cam.FOV = 120.0f;
         cam.Transform.Location = { 0.0f, 0.0f, -1.0f };
@@ -460,29 +506,23 @@ int main()
 
             cam.AspectRatio = (float)WndWidth / WndHeight;
 
-            quad.Transform.Rotation.Y += rotPerSec * deltaTime;
+            mainQuadTransform.Rotation.Y += rotPerSec * deltaTime;
 
             if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
             {
-                quad.TextureIndex = 0.0f;
+                textureIndex = 0.0f;
             }
             else
             {
-                quad.TextureIndex = 1.0f;
+                textureIndex = 1.0f;
             }
 
             BeginScene(cam);
 
-            Quad q2;
-
-            q2.Color = quad.Color;
-            q2.TextureIndex = quad.TextureIndex;
-            q2.Transform = quad.Transform;
-            q2.Transform.Location = { 0.0f, 0.0f, 0.0f };
-
-            DrawQuad(quad);
-            DrawQuad(q2);
-
+            DrawQuadTextured(mainQuadTransform, textureIndex, tilingFactor, mainQuadColor);
+            Transform tmp = mainQuadTransform;
+            tmp.Location = { 0.0f, 0.0f, 0.005f };
+            DrawQuad(tmp, mainQuadColor);
 
             EndScene();
         }
