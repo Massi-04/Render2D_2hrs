@@ -12,6 +12,8 @@ public:
 
 	static Texture* FromFile(const char* path);
 
+	inline uint32_t GetRendererID() const { return m_RendererID; }
+
 private:
 	uint32_t m_RendererID;
 	uint32_t m_Width;

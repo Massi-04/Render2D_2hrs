@@ -605,6 +605,7 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="res\doom.png" />
+    <Image Include="res\ue4.png" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="res\fragment.txt" />

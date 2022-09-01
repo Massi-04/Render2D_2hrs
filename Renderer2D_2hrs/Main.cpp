@@ -145,7 +145,6 @@ VertexArray* vertexArray;
 VertexBuffer* vBuffer;
 IndexBuffer* iBuffer;
 Shader* shader;
-Texture* whiteTexture;
 
 const Vec3 QuadVertices[] =
 {
@@ -241,12 +240,6 @@ void InitRenderer(uint32_t maxQuads)
 
     vertexArray = new VertexArray(vBuffer, iBuffer);
     vertexArray->Bind();
-
-    uint32_t rgba = 0xffffffff; // white texture
-    unsigned char* ptr = (unsigned char*)&rgba;
-    
-    whiteTexture = new Texture(1, 1, 4, ptr);
-    whiteTexture->Bind(0);
 
     int samplers[16];
     for (int i = 0; i < 16; i++)
@@ -491,7 +484,7 @@ int main()
         InitRenderer(MAX_QUAD_BATCH);
 
         myTexture = Texture::FromFile("res/doom.png");
-        myTexture->Bind(1);
+        myTexture->Bind(textureIndex);
 
         Camera cam;
         cam.FOV = 120.0f;
@@ -508,18 +501,17 @@ int main()
 
             mainQuadTransform.Rotation.Y += rotPerSec * deltaTime;
 
+            BeginScene(cam);
+
             if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
             {
-                textureIndex = 0.0f;
+                DrawQuad(mainQuadTransform, mainQuadColor);
             }
             else
             {
-                textureIndex = 1.0f;
+                DrawQuadTextured(mainQuadTransform, textureIndex, tilingFactor, mainQuadColor);
             }
 
-            BeginScene(cam);
-
-            DrawQuadTextured(mainQuadTransform, textureIndex, tilingFactor, mainQuadColor);
             Transform tmp = mainQuadTransform;
             tmp.Location = { 0.0f, 0.0f, 0.005f };
             DrawQuad(tmp, mainQuadColor);
