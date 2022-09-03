@@ -145,6 +145,7 @@ VertexArray* vertexArray;
 VertexBuffer* vBuffer;
 IndexBuffer* iBuffer;
 Shader* shader;
+Texture* whiteTexture;
 
 const Vec3 QuadVertices[] =
 {
@@ -241,6 +242,10 @@ void InitRenderer(uint32_t maxQuads)
     vertexArray = new VertexArray(vBuffer, iBuffer);
     vertexArray->Bind();
 
+    uint32_t whitePixel = 0xffffffff;
+    whiteTexture = new Texture(1, 1, 4, (unsigned char*)&whitePixel);
+    whiteTexture->Bind(0);
+
     int samplers[16];
     for (int i = 0; i < 16; i++)
         samplers[i] = i;
@@ -303,7 +308,7 @@ void DrawQuad(Transform transform, Vec3 color)
         *
         glm::scale(glm::mat4(1.0f), (glm::vec3)transform.Scale);
 
-   // GetTextCoordinates((float*)QuadTextCoords, tilingFactor);
+    // GetTextCoordinates((float*)QuadTextCoords, tilingFactor);
 
     for (int i = 0; i < 4; i++)
     {
@@ -314,8 +319,8 @@ void DrawQuad(Transform transform, Vec3 color)
 
         vertexBufferData[i + vertexIndex].Position = { res.x, res.y, res.z };
         vertexBufferData[i + vertexIndex].Color = color;
-        vertexBufferData[i + vertexIndex].TextureIndex = -1.0f;
-        //vertexBufferData[i + vertexIndex].TextureCoordinates = QuadTextCoords[i];
+        vertexBufferData[i + vertexIndex].TextureIndex = 0.0f;
+        vertexBufferData[i + vertexIndex].TextureCoordinates = QuadTextCoords[i];
     }
 
     quadCount++;
@@ -484,7 +489,7 @@ int main()
         InitRenderer(MAX_QUAD_BATCH);
 
         myTexture = Texture::FromFile("res/doom.png");
-        myTexture->Bind(textureIndex);
+        myTexture->Bind(1.0f);
 
         Camera cam;
         cam.FOV = 120.0f;
@@ -505,12 +510,14 @@ int main()
 
             if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
             {
-                DrawQuad(mainQuadTransform, mainQuadColor);
+                textureIndex = 0.0f;
             }
             else
             {
-                DrawQuadTextured(mainQuadTransform, textureIndex, tilingFactor, mainQuadColor);
+                textureIndex = 1.0f;
             }
+
+            DrawQuadTextured(mainQuadTransform, textureIndex, tilingFactor, mainQuadColor);
 
             Transform tmp = mainQuadTransform;
             tmp.Location = { 0.0f, 0.0f, 0.005f };
