@@ -104,18 +104,6 @@ void GetTextCoordinates(float* coords, float tilingFactor = 1.0f)
 
     coords[6] = 0.0f;
     coords[7] = 0.0f;
-
-    /*struct Vec2Pack
-    {
-        float x, y;
-    };
-
-    Vec2Pack* data = (Vec2Pack*)coords;
-    
-    data[0] = { 0.0f, tilingFactor };
-    data[1] = { tilingFactor, tilingFactor };
-    data[2] = { tilingFactor, 0.0f };
-    data[3] = { 0.0f, 0.0f };*/
 }
 
 void OnWindowResize(GLFWwindow* window, int width, int height);
@@ -127,6 +115,7 @@ int WndHeight = 900;
 #define VSYNC 1
 
 #define MAX_QUAD_BATCH 5000
+#define MAX_TEXTURE_SLOTS 16
 
 GLFWwindow* window;
 
@@ -146,6 +135,49 @@ VertexBuffer* vBuffer;
 IndexBuffer* iBuffer;
 Shader* shader;
 Texture* whiteTexture;
+
+Texture** textureSlots;
+uint32_t textureIndex = 0;
+
+int32_t FindTexture(Texture* texture)
+{
+    for (uint32_t i = 0; i < MAX_TEXTURE_SLOTS; i++)
+    {
+        if (textureSlots[i] == texture)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+inline bool IsTextureBound(Texture* texture)
+{
+    return FindTexture(texture) != -1;
+}
+
+void PushTexture(Texture* texture)
+{
+    textureSlots[textureIndex++] = texture;
+}
+
+void BindAllTextures()
+{
+    for (uint32_t i = 0; i < textureIndex; i++)
+    {
+        textureSlots[i]->Bind(i);
+    }
+}
+
+void ClearTextures()
+{
+    textureIndex = 0;
+    for (int i = 0; i < MAX_TEXTURE_SLOTS; i++)
+    {
+        textureSlots[i] = nullptr;
+    }
+    PushTexture(whiteTexture);
+}
 
 const Vec3 QuadVertices[] =
 {
@@ -244,12 +276,13 @@ void InitRenderer(uint32_t maxQuads)
 
     uint32_t whitePixel = 0xffffffff;
     whiteTexture = new Texture(1, 1, 4, (unsigned char*)&whitePixel);
-    whiteTexture->Bind(0);
 
-    int samplers[16];
-    for (int i = 0; i < 16; i++)
+    int samplers[MAX_TEXTURE_SLOTS];
+    for (int i = 0; i < MAX_TEXTURE_SLOTS; i++)
         samplers[i] = i;
-    shader->SetUniform1iv("u_TexSlots", 16, samplers);
+    shader->SetUniform1iv("u_TexSlots", MAX_TEXTURE_SLOTS, samplers);
+
+    textureSlots = (Texture**)malloc(sizeof(Texture*) * MAX_TEXTURE_SLOTS);
 }
 
 void ShutdownRenderer()
@@ -259,6 +292,8 @@ void ShutdownRenderer()
 
     delete vBuffer;
     delete iBuffer;
+
+    delete[] textureSlots;
 }
 
 void ImGuiRender();
@@ -281,6 +316,8 @@ void BeginScene(Camera camera)
             GetRotation(-camera.Transform.Rotation);
 
     proj = glm::perspectiveLH(glm::radians(camera.FOV), camera.AspectRatio, 0.1f, 10000.0f);
+
+    PushTexture(whiteTexture);
 }
 
 void Flush()
@@ -292,9 +329,12 @@ void Flush()
 
     vBuffer->SetData((float*)vertexBufferData, sizeof(Vertex) * 4 * quadCount, 0);
 
+    BindAllTextures();
+
     glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, nullptr);
 
     quadCount = 0;
+    ClearTextures();
 
     drawCalls++;
 }
@@ -331,7 +371,7 @@ void DrawQuad(Transform transform, Vec3 color)
     }
 }
 
-void DrawQuadTextured(Transform transform, float textureIndex, float tilingFactor = 1.0f, Vec3 colorTint = { 1.0f, 1.0f, 1.0f })
+void DrawQuadTextured(Transform transform, Texture* texture, float tilingFactor = 1.0f, Vec3 colorTint = { 1.0f, 1.0f, 1.0f })
 {
     glm::mat4 model =
         glm::translate(glm::mat4(1.0f), (glm::vec3)transform.Location)
@@ -341,6 +381,13 @@ void DrawQuadTextured(Transform transform, float textureIndex, float tilingFacto
         glm::scale(glm::mat4(1.0f), (glm::vec3)transform.Scale);
 
     GetTextCoordinates((float*)QuadTextCoords, tilingFactor);
+
+    float textureLoc = FindTexture(texture);
+    if (textureLoc == -1)
+    {
+        PushTexture(texture);
+        textureLoc = textureIndex - 1;
+    }
 
     for (int i = 0; i < 4; i++)
     {
@@ -352,14 +399,12 @@ void DrawQuadTextured(Transform transform, float textureIndex, float tilingFacto
         vertexBufferData[i + vertexIndex].Position = { res.x, res.y, res.z };
         vertexBufferData[i + vertexIndex].Color = colorTint;
         vertexBufferData[i + vertexIndex].TextureCoordinates = QuadTextCoords[i];
-        vertexBufferData[i + vertexIndex].TextureIndex = textureIndex;
+        vertexBufferData[i + vertexIndex].TextureIndex = textureLoc;
     }
-
-    // todo texture binding, finding ecc.. if we exeed 16 slots bla bla
 
     quadCount++;
 
-    if (quadCount == MaxQuads)
+    if (quadCount == MaxQuads || textureIndex == MAX_TEXTURE_SLOTS)
     {
         Flush();
     }
@@ -367,7 +412,7 @@ void DrawQuadTextured(Transform transform, float textureIndex, float tilingFacto
 
 void EndScene()
 {
-    if (quadCount > 0)
+    if (quadCount > 0 || textureIndex > 0)
         Flush();
 
     glDisable(GL_DEPTH_TEST);
@@ -479,7 +524,6 @@ void OnWindowResize(GLFWwindow* window, int width, int height)
     WndHeight = height;
 }
 
-float textureIndex = 0.0f;
 float rot = 0.0f;
 
 int main()
@@ -489,7 +533,8 @@ int main()
         InitRenderer(MAX_QUAD_BATCH);
 
         myTexture = Texture::FromFile("res/doom.png");
-        myTexture->Bind(1.0f);
+
+        Texture* selectedTexture = nullptr;
 
         Camera cam;
         cam.FOV = 120.0f;
@@ -510,14 +555,14 @@ int main()
 
             if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
             {
-                textureIndex = 0.0f;
+                selectedTexture = whiteTexture;
             }
             else
             {
-                textureIndex = 1.0f;
+                selectedTexture = myTexture;
             }
 
-            DrawQuadTextured(mainQuadTransform, textureIndex, tilingFactor, mainQuadColor);
+            DrawQuadTextured(mainQuadTransform, selectedTexture, tilingFactor, mainQuadColor);
 
             Transform tmp = mainQuadTransform;
             tmp.Location = { 0.0f, 0.0f, 0.005f };
