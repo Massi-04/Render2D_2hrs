@@ -137,11 +137,11 @@ Shader* shader;
 Texture* whiteTexture;
 
 Texture** textureSlots;
-uint32_t textureIndex = 0;
+uint32_t textureIndex = 1;
 
 int32_t FindTexture(Texture* texture)
 {
-    for (uint32_t i = 0; i < MAX_TEXTURE_SLOTS; i++)
+    for (uint32_t i = 0; i < textureIndex; i++)
     {
         if (textureSlots[i] == texture)
         {
@@ -171,12 +171,11 @@ void BindAllTextures()
 
 void ClearTextures()
 {
-    textureIndex = 0;
-    for (int i = 0; i < MAX_TEXTURE_SLOTS; i++)
+    textureIndex = 1;
+    for (uint32_t i = 1; i < MAX_TEXTURE_SLOTS; i++)
     {
         textureSlots[i] = nullptr;
     }
-    PushTexture(whiteTexture);
 }
 
 const Vec3 QuadVertices[] =
@@ -283,17 +282,18 @@ void InitRenderer(uint32_t maxQuads)
     shader->SetUniform1iv("u_TexSlots", MAX_TEXTURE_SLOTS, samplers);
 
     textureSlots = (Texture**)malloc(sizeof(Texture*) * MAX_TEXTURE_SLOTS);
+    textureSlots[0] = whiteTexture;
 }
 
 void ShutdownRenderer()
 {
-    delete[] vertexBufferData;
-    delete[] indexBufferData;
+    free(vertexBufferData);
+    free(indexBufferData);
 
     delete vBuffer;
     delete iBuffer;
 
-    delete[] textureSlots;
+    free(textureSlots);
 }
 
 void ImGuiRender();
@@ -316,8 +316,6 @@ void BeginScene(Camera camera)
             GetRotation(-camera.Transform.Rotation);
 
     proj = glm::perspectiveLH(glm::radians(camera.FOV), camera.AspectRatio, 0.1f, 10000.0f);
-
-    PushTexture(whiteTexture);
 }
 
 void Flush()
@@ -412,7 +410,7 @@ void DrawQuadTextured(Transform transform, Texture* texture, float tilingFactor 
 
 void EndScene()
 {
-    if (quadCount > 0 || textureIndex > 0)
+    if (quadCount > 0 || textureIndex > 1)
         Flush();
 
     glDisable(GL_DEPTH_TEST);
@@ -534,7 +532,7 @@ int main()
 
         myTexture = Texture::FromFile("res/doom.png");
 
-        Texture* selectedTexture = nullptr;
+        Texture* selectedTexture = myTexture;
 
         Camera cam;
         cam.FOV = 120.0f;
@@ -553,14 +551,14 @@ int main()
 
             BeginScene(cam);
 
-            if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+           /* if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
             {
                 selectedTexture = whiteTexture;
             }
             else
             {
                 selectedTexture = myTexture;
-            }
+            }*/
 
             DrawQuadTextured(mainQuadTransform, selectedTexture, tilingFactor, mainQuadColor);
 
