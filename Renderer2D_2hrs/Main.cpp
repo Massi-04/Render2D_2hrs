@@ -107,14 +107,15 @@ void GetTextCoordinates(float* coords, float tilingFactor = 1.0f)
 }
 
 void OnWindowResize(GLFWwindow* window, int width, int height);
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 
 
 int WndWidth = 1600;
 int WndHeight = 900;
 
-#define VSYNC 1
+#define VSYNC 0
 
-#define MAX_QUAD_BATCH 5000
+#define MAX_QUAD_BATCH 10000
 #define MAX_TEXTURE_SLOTS 16
 
 GLFWwindow* window;
@@ -124,6 +125,7 @@ uint32_t MaxVertices = 0;
 uint32_t MaxIndices = 0;
 
 uint32_t quadCount = 0;
+uint32_t totalQuadCount = 0;
 
 uint32_t drawCalls = 0;
 
@@ -138,6 +140,9 @@ Texture* whiteTexture;
 
 Texture** textureSlots;
 uint32_t textureIndex = 1;
+uint32_t totalTextures = 1;
+
+int32_t checherboardSize = 50;
 
 int32_t FindTexture(Texture* texture)
 {
@@ -159,6 +164,7 @@ inline bool IsTextureBound(Texture* texture)
 void PushTexture(Texture* texture)
 {
     textureSlots[textureIndex++] = texture;
+    totalTextures++;
 }
 
 void BindAllTextures()
@@ -216,6 +222,8 @@ bool Init()
     glfwSwapInterval(VSYNC);
 
     glfwSetWindowSizeCallback(window, OnWindowResize);
+
+    glfwSetScrollCallback(window, scroll_callback);
 
     ImGui::CreateContext();
 
@@ -362,6 +370,7 @@ void DrawQuad(Transform transform, Vec3 color)
     }
 
     quadCount++;
+    totalQuadCount++;
 
     if (quadCount == MaxQuads)
     {
@@ -401,6 +410,7 @@ void DrawQuadTextured(Transform transform, Texture* texture, float tilingFactor 
     }
 
     quadCount++;
+    totalQuadCount++;
 
     if (quadCount == MaxQuads || textureIndex == MAX_TEXTURE_SLOTS)
     {
@@ -418,6 +428,9 @@ void EndScene()
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     
+    totalQuadCount = 0;
+    totalTextures = 1; // white texture
+    
     glfwSwapBuffers(window);
 }
 
@@ -427,10 +440,16 @@ float deltaTime = 0.0f;
 float rotPerSec = 50.0f;
 float tilingFactor = 1.0f;
 
+float cameraMoveSpeed = 3.0f;
+float cameraScroolMultiplier = 100.0f;
+float mouseSens = 0.5f;
+
 Transform mainQuadTransform = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f} };
 Vec3 mainQuadColor = { 1.0f, 1.0f, 1.0f };
 
 Texture* myTexture;
+
+Camera cam;
 
 #define SUBMENU(MenuName, Code)\
 if(ImGui::CollapsingHeader(MenuName, ImGuiTreeNodeFlags_DefaultOpen)) \
@@ -453,7 +472,9 @@ void ImGuiRender()
     (
         "Tips / Help",
         {
-            ImGui::Text("- Tieni premuto \"E\" per rimuovere la texture");
+            ImGui::Text("-WASD and QE to move the camera");
+            ImGui::Text("-Hold right mouse btn to rotate the camera");
+            ImGui::Text("-Mouse wheel to zoom the camera in/out");
         }
     );
 
@@ -481,8 +502,17 @@ void ImGuiRender()
     (
         "Script",
         {
+            ImGui::DragInt("Checherboard size", &checherboardSize, 0);
             ImGui::DragFloat("Rotation speed (deg/s)", &rotPerSec);
             ImGui::DragFloat("Texture tiling factor", &tilingFactor, 0.5f);
+            ImGui::DragFloat("Camera speed (units/s)", &cameraMoveSpeed);
+            ImGui::DragFloat("Camera scroll multiplier", &cameraScroolMultiplier);
+            ImGui::DragFloat("Mouse sensitivity", &mouseSens);
+            if (ImGui::Button("Reset camera transform"))
+            {
+                cam.Transform = {};
+                cam.Transform.Location.Z = -1.0f;
+            }
         }
     );
 
@@ -496,12 +526,14 @@ void ImGuiRender()
             ImGui::Spacing();
             ImGui::Text("Frametime: %.3f ms (%i FPS )", deltaTime * 1000, (int32_t)(1.0f / deltaTime));
             ImGui::Text("Draw calls: %i", drawCalls);
+            ImGui::Text("Quad count: %i", totalQuadCount);
+            ImGui::Text("Texture count: %i", totalTextures);
         }
     );
-     
+
     ImGui::End();
 
-    
+
     ImGui::Begin("lol");
 
     ImGui::SetWindowPos({ (float)WndWidth - 200 - 20, 0 + 20 }, ImGuiCond_Once);
@@ -511,7 +543,7 @@ void ImGuiRender()
     {
         MessageBoxA(nullptr, "LOL", "lol", MB_OK | MB_SYSTEMMODAL | MB_ICONERROR);
         abort(); // lol
-    }   
+    }
     ImGui::End();
 }
 
@@ -524,6 +556,102 @@ void OnWindowResize(GLFWwindow* window, int width, int height)
 
 float rot = 0.0f;
 
+float mouseX = 0.0f;
+float mouseY = 0.0f;
+
+inline void MoveCameraForward(float direction)
+{
+    cam.Transform.Location.Z += direction * cameraMoveSpeed * deltaTime;
+}
+
+inline void MoveCameraRight(float direction)
+{
+    cam.Transform.Location.X += direction * cameraMoveSpeed * deltaTime;
+}
+
+inline void MoveCameraUp(float direction)
+{
+    cam.Transform.Location.Y += direction * cameraMoveSpeed * deltaTime;
+}
+
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
+{
+    MoveCameraForward(yoffset * cameraScroolMultiplier);
+}
+
+void UpdateCameraLocation()
+{
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+    {
+        MoveCameraRight(-1.0f);
+    }
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+    {
+        MoveCameraRight(1.0f);
+    }
+    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+    {
+        MoveCameraUp(-1.0f);
+    }
+    if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+    {
+        MoveCameraUp(1.0f);
+    }
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+    {
+        MoveCameraForward(-1.0f);
+    }
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+    {
+        MoveCameraForward(1.0f);
+    }
+}
+
+void UpdateCameraRotation()
+{
+    double newX, newY;
+    glfwGetCursorPos(window, &newX, &newY);
+    
+    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS)
+    {
+        float deltaX = mouseX - newX;
+        float deltaY = mouseY - newY;
+
+        if (deltaX != 0.0f)
+        {
+            cam.Transform.Rotation.Y += -deltaX * mouseSens;
+        }
+        if (deltaY != 0.0f)
+        {
+            cam.Transform.Rotation.X += -deltaY * mouseSens;
+        }
+    }
+    
+    mouseX = newX;
+    mouseY = newY;
+}
+
+void DrawCheckerboard()
+{
+    Transform tmp = {};
+    tmp.Scale = { 1.0f, 1.0f, 1.0f };
+    
+    bool white = !(checherboardSize % 2);
+    
+    for (uint32_t height = 0; height < checherboardSize; height++)
+    {
+        if (!(checherboardSize % 2))
+        {
+            white = !white;
+        }
+        for (uint32_t width = 0; width < checherboardSize; width++)
+        {
+            tmp.Location = { 1.0f * width, 1.0f * height, 0.0f };
+            DrawQuadTextured(tmp, (white = !white) ? whiteTexture : myTexture, 1.0f, mainQuadColor);
+        }
+    }
+}
+
 int main()
 {
     if (Init())
@@ -534,7 +662,6 @@ int main()
 
         Texture* selectedTexture = myTexture;
 
-        Camera cam;
         cam.FOV = 120.0f;
         cam.Transform.Location = { 0.0f, 0.0f, -1.0f };
         cam.Transform.Rotation = { 0.0f, 0.0f, 0.0f };
@@ -549,22 +676,15 @@ int main()
 
             mainQuadTransform.Rotation.Y += rotPerSec * deltaTime;
 
-            BeginScene(cam);
+            UpdateCameraLocation();
+            UpdateCameraRotation();
 
-           /* if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
-            {
-                selectedTexture = whiteTexture;
-            }
-            else
-            {
-                selectedTexture = myTexture;
-            }*/
+            BeginScene(cam);
 
             DrawQuadTextured(mainQuadTransform, selectedTexture, tilingFactor, mainQuadColor);
 
-            Transform tmp = mainQuadTransform;
-            tmp.Location = { 0.0f, 0.0f, 0.005f };
-            DrawQuad(tmp, mainQuadColor);
+
+            DrawCheckerboard();
 
             EndScene();
         }
