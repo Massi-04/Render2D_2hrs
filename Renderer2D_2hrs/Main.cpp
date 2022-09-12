@@ -115,6 +115,8 @@ int WndHeight = 900;
 
 #define VSYNC 0
 
+#define IMGUI 1
+
 #define MAX_QUAD_BATCH 10000
 #define MAX_TEXTURE_SLOTS 16
 
@@ -143,6 +145,7 @@ uint32_t textureIndex = 1;
 uint32_t totalTextures = 1;
 
 int32_t checherboardSize = 50;
+Vec3 clearColor = { 0.321f, 0.058f, 0.784f };
 
 int32_t FindTexture(Texture* texture)
 {
@@ -225,6 +228,8 @@ bool Init()
 
     glfwSetScrollCallback(window, scroll_callback);
 
+#if IMGUI
+
     ImGui::CreateContext();
 
     ImGui::GetIO().IniFilename = nullptr;
@@ -234,6 +239,8 @@ bool Init()
 
     if (!ImGui_ImplOpenGL3_Init())
         return false;
+
+#endif
     
     return true;
 }
@@ -291,6 +298,8 @@ void InitRenderer(uint32_t maxQuads)
 
     textureSlots = (Texture**)malloc(sizeof(Texture*) * MAX_TEXTURE_SLOTS);
     textureSlots[0] = whiteTexture;
+
+    glClearColor(clearColor.X, clearColor.Y, clearColor.Z, 1.0f);
 }
 
 void ShutdownRenderer()
@@ -312,9 +321,13 @@ void BeginScene(Camera camera)
 
     glfwPollEvents();
 
+#if IMGUI
+
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
+
+#endif
     
     glEnable(GL_DEPTH_TEST);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -424,10 +437,11 @@ void EndScene()
     if (quadCount > 0 || textureIndex > 1)
         Flush();
 
-    glDisable(GL_DEPTH_TEST);
+#if IMGUI
     ImGuiRender();
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+#endif
     
     totalQuadCount = 0;
     totalTextures = 1; // white texture
@@ -452,6 +466,8 @@ Texture* myTexture;
 
 Camera cam;
 
+float imguiPanelWidth = -1.0f;
+
 #define SUBMENU(MenuName, Code)\
 if(ImGui::CollapsingHeader(MenuName, ImGuiTreeNodeFlags_DefaultOpen)) \
 { \
@@ -462,12 +478,14 @@ if(ImGui::CollapsingHeader(MenuName, ImGuiTreeNodeFlags_DefaultOpen)) \
 ImGui::Spacing(); \
 ImGui::Spacing();
 
+#if IMGUI
 void ImGuiRender()
 {
     ImGui::Begin("Settings");
 
     ImGui::SetWindowPos({ 0, 0 }, ImGuiCond_Once);
     ImGui::SetWindowSize({ (float)400, (float) WndHeight }, ImGuiCond_Once);
+    imguiPanelWidth = ImGui::GetWindowWidth();
 
     SUBMENU
     (
@@ -491,11 +509,35 @@ void ImGuiRender()
 
     SUBMENU
     (
+        "Clear color",
+        {
+            ImGui::PushItemWidth(200);
+            ImGui::ColorPicker3("Background color", &clearColor.X, 0);
+            ImGui::PopItemWidth();
+            if (ImGui::Button("Apply"))
+            {
+                glClearColor(clearColor.X, clearColor.Y, clearColor.Z, 1.0f);
+            }
+        }
+    );
+
+    SUBMENU
+    (
         "Quad transform",
         {
-            ImGui::DragFloat3("Location", &mainQuadTransform.Location.X, 0.01f);
-            ImGui::DragFloat3("Rotation", &mainQuadTransform.Rotation.X, 0.01f);
-            ImGui::DragFloat3("Scale", &mainQuadTransform.Scale.X, .01f, 0.01f, 1000.0f, "%.3f", 0);
+            ImGui::DragFloat3("Q_Location", &mainQuadTransform.Location.X, 0.01f);
+            ImGui::DragFloat3("Q_Rotation", &mainQuadTransform.Rotation.X, 0.01f);
+            ImGui::DragFloat3("Q_Scale", &mainQuadTransform.Scale.X, .01f, 0.01f, 1000.0f, "%.3f", 0);
+        }
+    );
+
+    SUBMENU
+    (
+        "Camera transform and FOV",
+        {
+            ImGui::DragFloat3("C_Location", &cam.Transform.Location.X, 0.01f);
+            ImGui::DragFloat3("C_Rotation", &cam.Transform.Rotation.X, 0.01f);
+            ImGui::DragFloat("C_FOV", &cam.FOV, .01f, 0.01f, 1000.0f, "%.3f", 0);
         }
     );
 
@@ -547,6 +589,7 @@ void ImGuiRender()
     }
     ImGui::End();
 }
+#endif
 
 void OnWindowResize(GLFWwindow* window, int width, int height)
 {
@@ -577,7 +620,12 @@ inline void MoveCameraUp(float direction)
 
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 {
-    MoveCameraForward(yoffset * cameraScroolMultiplier);
+    double mouseX, mouseY;
+    glfwGetCursorPos(window, &mouseX, &mouseY);
+    if (mouseX > imguiPanelWidth)
+    {
+        MoveCameraForward(yoffset * cameraScroolMultiplier);
+    }
 }
 
 void UpdateCameraLocation()
@@ -684,10 +732,11 @@ int main()
 
             DrawQuadTextured(mainQuadTransform, selectedTexture, tilingFactor, mainQuadColor);
 
-
             DrawCheckerboard();
 
             EndScene();
+
+            glfwSetWindowTitle(window, std::to_string(1.0f / deltaTime).c_str());
         }
 
         ShutdownRenderer();
