@@ -319,9 +319,10 @@ void BeginScene(Camera camera)
     glEnable(GL_DEPTH_TEST);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    view =  glm::translate(glm::mat4(1.0f), -(glm::vec3)camera.Transform.Location)
-            *
-            GetRotation(-camera.Transform.Rotation);
+    view =
+        GetRotation(-camera.Transform.Rotation)
+        *
+        glm::translate(glm::mat4(1.0f), -(glm::vec3)camera.Transform.Location);
 
     proj = glm::perspectiveLH(glm::radians(camera.FOV), camera.AspectRatio, 0.1f, 10000.0f);
 }
@@ -438,7 +439,7 @@ float totalTime = 0.0f;
 float deltaTime = 0.0f;
 
 float rotPerSec = 50.0f;
-float tilingFactor = 1.0f;
+float tilingFactor = 3.0f;
 
 float cameraMoveSpeed = 3.0f;
 float cameraScroolMultiplier = 100.0f;
