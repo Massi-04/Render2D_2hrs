@@ -709,8 +709,6 @@ int main()
 
         myTexture = Texture::FromFile("res/doom.png");
 
-        Texture* selectedTexture = myTexture;
-
         cam.FOV = 120.0f;
         cam.Transform.Location = { 0.0f, 0.0f, -1.0f };
         cam.Transform.Rotation = { 0.0f, 0.0f, 0.0f };
@@ -730,13 +728,11 @@ int main()
 
             BeginScene(cam);
 
-            DrawQuadTextured(mainQuadTransform, selectedTexture, tilingFactor, mainQuadColor);
+            DrawQuadTextured(mainQuadTransform, myTexture, tilingFactor, mainQuadColor);
 
             DrawCheckerboard();
 
             EndScene();
-
-            glfwSetWindowTitle(window, std::to_string(1.0f / deltaTime).c_str());
         }
 
         ShutdownRenderer();
