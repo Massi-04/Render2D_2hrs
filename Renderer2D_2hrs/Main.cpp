@@ -17,6 +17,8 @@
 
 #include <Windows.h>
 
+#include <future>
+
 struct Vec2
 {
     float X, Y;
@@ -30,7 +32,7 @@ struct Vec2
 struct Vec3
 {
     float X, Y, Z;
-    
+
     operator glm::vec3() const
     {
         return glm::vec3(X, Y, Z);
@@ -77,6 +79,14 @@ struct Camera
     Transform Transform;
     float FOV;
     float AspectRatio;
+};
+
+struct TexturedQuad
+{
+    Transform Transform;
+    Vec3 ColorTint;
+    float TextureIndex;
+    float TilingFactor;
 };
 
 glm::mat4 GetRotation(Vec3 rotation)
@@ -147,6 +157,11 @@ uint32_t totalTextures = 1;
 int32_t checherboardSize = 50;
 Vec3 clearColor = { 0.321f, 0.058f, 0.784f };
 
+TexturedQuad* quadBatch = 0;
+
+int ThreadCount = 0;
+std::future<void>* threads = 0;
+
 int32_t FindTexture(Texture* texture)
 {
     for (uint32_t i = 0; i < textureIndex; i++)
@@ -202,6 +217,15 @@ glm::mat4 proj;
 
 bool Init()
 {
+    ThreadCount = std::thread::hardware_concurrency();
+    if (ThreadCount < 1)
+    {
+        return false;
+    }
+    // NO, IT USES THE CONSTRUCTOR FOR REF COUNT AND WE NEED TO INITIALIZE IT, we could loop and init it ourself but lets use the new operator
+    // threads = (std::future<void>*)malloc(sizeof(std::future<void>) * ThreadCount);
+    threads = new std::future<void>[ThreadCount];
+
     /* Initialize the library */
     if (!glfwInit())
         return false;
@@ -241,12 +265,13 @@ bool Init()
         return false;
 
 #endif
-    
+
     return true;
 }
 
 void Shutdown()
 {
+    delete[] threads;
     glfwTerminate();
 }
 
@@ -283,7 +308,7 @@ void InitRenderer(uint32_t maxQuads)
         { ShaderDataType::Float3, false },
         { ShaderDataType::Float2, false },
         { ShaderDataType::Float, false }
-    });
+        });
 
     vertexArray = new VertexArray(vBuffer, iBuffer);
     vertexArray->Bind();
@@ -299,6 +324,8 @@ void InitRenderer(uint32_t maxQuads)
     textureSlots = (Texture**)malloc(sizeof(Texture*) * MAX_TEXTURE_SLOTS);
     textureSlots[0] = whiteTexture;
 
+    quadBatch = (TexturedQuad*)malloc(sizeof(TexturedQuad) * MAX_QUAD_BATCH);
+
     glClearColor(clearColor.X, clearColor.Y, clearColor.Z, 1.0f);
 }
 
@@ -311,6 +338,8 @@ void ShutdownRenderer()
     delete iBuffer;
 
     free(textureSlots);
+
+    free(quadBatch);
 }
 
 void ImGuiRender();
@@ -328,7 +357,7 @@ void BeginScene(Camera camera)
     ImGui::NewFrame();
 
 #endif
-    
+
     glEnable(GL_DEPTH_TEST);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -340,8 +369,65 @@ void BeginScene(Camera camera)
     proj = glm::perspectiveLH(glm::radians(camera.FOV), camera.AspectRatio, 0.1f, 10000.0f);
 }
 
+void CalcVertices(TexturedQuad* batchData, Vertex* vertexData, uint32_t count)
+{
+    Vec2 quadTextCoords[4];
+
+    for (uint32_t i = 0; i < count; i++)
+    {
+        glm::mat4 model =
+            glm::translate(glm::mat4(1.0f), (glm::vec3)(batchData->Transform.Location))
+            *
+            GetRotation(batchData->Transform.Rotation)
+            *
+            glm::scale(glm::mat4(1.0f), (glm::vec3)(batchData->Transform.Scale));
+
+        GetTextCoordinates((float*)quadTextCoords, batchData->TilingFactor);
+
+        for (uint32_t j = 0; j < 4; j++)
+        {
+            uint32_t vertexIndex = quadCount * 4;
+
+            glm::vec4 loc = QuadVertices[j];
+            glm::vec3 res = model * loc;
+
+            vertexData->Position = { res.x, res.y, res.z };
+            vertexData->Color = batchData->ColorTint;
+            vertexData->TextureCoordinates = quadTextCoords[j];
+            vertexData->TextureIndex = batchData->TextureIndex;
+            vertexData++;
+        }
+
+        batchData++;
+    }
+}
+
+void BuildVertexBuffer()
+{
+    int32_t quadsPerThread = quadCount / ThreadCount;
+    TexturedQuad* batchData = quadBatch;
+    Vertex* vertexData = vertexBufferData;
+
+    int32_t i;
+    for (i = 0; i < ThreadCount - 1; i++)
+    {
+        threads[i] = std::async(std::launch::async, CalcVertices, batchData, vertexData, quadsPerThread);
+
+        batchData += quadsPerThread;
+        vertexData += quadsPerThread * 4;
+    }
+    threads[i] = std::async(std::launch::async, CalcVertices, batchData, vertexData, quadCount - quadsPerThread * i);
+
+    for (int32_t j = 0; j < i + 1; j++)
+    {
+        threads[j].wait();
+    }
+}
+
 void Flush()
 {
+    BuildVertexBuffer();
+
     uint32_t indexCount = quadCount * 6;
 
     shader->SetUniformMat4("u_View", 1, glm::value_ptr(view), false);
@@ -392,9 +478,29 @@ void DrawQuad(Transform transform, Vec3 color)
     }
 }
 
-void DrawQuadTextured(Transform transform, Texture* texture, float tilingFactor = 1.0f, Vec3 colorTint = { 1.0f, 1.0f, 1.0f })
+void PushTexturedQuad(const TexturedQuad& quad)
 {
-    glm::mat4 model =
+    memcpy(quadBatch + quadCount, &quad, sizeof(TexturedQuad));
+}
+
+void DrawQuadTextured(const Transform& transform, Texture* texture, float tilingFactor = 1.0f, Vec3 colorTint = { 1.0f, 1.0f, 1.0f })
+{
+    float textureLoc = FindTexture(texture);
+    if (textureLoc == -1)
+    {
+        PushTexture(texture);
+        textureLoc = textureIndex - 1;
+    }
+
+    TexturedQuad desc;
+    desc.Transform = transform;
+    desc.TextureIndex = textureLoc;
+    desc.TilingFactor = tilingFactor;
+    desc.ColorTint = colorTint;
+
+    PushTexturedQuad(desc);
+
+    /*glm::mat4 model =
         glm::translate(glm::mat4(1.0f), (glm::vec3)transform.Location)
         *
         GetRotation(transform.Rotation)
@@ -421,7 +527,7 @@ void DrawQuadTextured(Transform transform, Texture* texture, float tilingFactor 
         vertexBufferData[i + vertexIndex].Color = colorTint;
         vertexBufferData[i + vertexIndex].TextureCoordinates = QuadTextCoords[i];
         vertexBufferData[i + vertexIndex].TextureIndex = textureLoc;
-    }
+    }*/
 
     quadCount++;
     totalQuadCount++;
@@ -442,10 +548,10 @@ void EndScene()
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 #endif
-    
+
     totalQuadCount = 0;
     totalTextures = 1; // white texture
-    
+
     glfwSwapBuffers(window);
 }
 
@@ -484,7 +590,7 @@ void ImGuiRender()
     ImGui::Begin("Settings");
 
     ImGui::SetWindowPos({ 0, 0 }, ImGuiCond_Once);
-    ImGui::SetWindowSize({ (float)400, (float) WndHeight }, ImGuiCond_Once);
+    ImGui::SetWindowSize({ (float)400, (float)WndHeight }, ImGuiCond_Once);
     imguiPanelWidth = ImGui::GetWindowWidth();
 
     SUBMENU
@@ -660,7 +766,7 @@ void UpdateCameraRotation()
 {
     double newX, newY;
     glfwGetCursorPos(window, &newX, &newY);
-    
+
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS)
     {
         float deltaX = mouseX - newX;
@@ -675,7 +781,7 @@ void UpdateCameraRotation()
             cam.Transform.Rotation.X += -deltaY * mouseSens;
         }
     }
-    
+
     mouseX = newX;
     mouseY = newY;
 }
@@ -684,9 +790,9 @@ void DrawCheckerboard()
 {
     Transform tmp = {};
     tmp.Scale = { 1.0f, 1.0f, 1.0f };
-    
+
     bool white = !(checherboardSize % 2);
-    
+
     for (uint32_t height = 0; height < checherboardSize; height++)
     {
         if (!(checherboardSize % 2))
@@ -696,7 +802,7 @@ void DrawCheckerboard()
         for (uint32_t width = 0; width < checherboardSize; width++)
         {
             tmp.Location = { 1.0f * width, 1.0f * height, 0.0f };
-            DrawQuadTextured(tmp, (white = !white) ? whiteTexture : myTexture, 1.0f, mainQuadColor);
+            DrawQuadTextured(tmp, (white = !white) ? whiteTexture : myTexture, 1.0f, { 1.0f, 1.0f, 1.0f });
         }
     }
 }
@@ -737,7 +843,7 @@ int main()
 
         ShutdownRenderer();
         Shutdown();
-        
+
         return 0;
     }
     else
