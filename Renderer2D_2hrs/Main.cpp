@@ -122,6 +122,7 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 
 int WndWidth = 1600;
 int WndHeight = 900;
+bool Fullscreen = false;
 
 #define VSYNC 0
 
@@ -231,7 +232,8 @@ bool Init()
         return false;
 
     /* Create a windowed mode window and its OpenGL context */
-    window = glfwCreateWindow(WndWidth, WndHeight, "Mhanz", NULL, NULL);
+    window = glfwCreateWindow(WndWidth, WndHeight, "Mhanz", Fullscreen ? glfwGetPrimaryMonitor() : 0, NULL);
+    
     if (!window)
     {
         glfwTerminate();
