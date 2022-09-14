@@ -447,29 +447,20 @@ void Flush()
     drawCalls++;
 }
 
+void PushTexturedQuad(const TexturedQuad& quad)
+{
+    memcpy(quadBatch + quadCount, &quad, sizeof(TexturedQuad));
+}
+
 void DrawQuad(Transform transform, Vec3 color)
 {
-    glm::mat4 model =
-        glm::translate(glm::mat4(1.0f), (glm::vec3)transform.Location)
-        *
-        GetRotation(transform.Rotation)
-        *
-        glm::scale(glm::mat4(1.0f), (glm::vec3)transform.Scale);
+    TexturedQuad desc;
+    desc.Transform = transform;
+    desc.TextureIndex = 0.0f; // white texture
+    desc.TilingFactor = 1.0f;
+    desc.ColorTint = color;
 
-    // GetTextCoordinates((float*)QuadTextCoords, tilingFactor);
-
-    for (int i = 0; i < 4; i++)
-    {
-        uint32_t vertexIndex = quadCount * 4;
-
-        glm::vec4 loc = QuadVertices[i];
-        glm::vec3 res = model * loc;
-
-        vertexBufferData[i + vertexIndex].Position = { res.x, res.y, res.z };
-        vertexBufferData[i + vertexIndex].Color = color;
-        vertexBufferData[i + vertexIndex].TextureIndex = 0.0f;
-        vertexBufferData[i + vertexIndex].TextureCoordinates = QuadTextCoords[i];
-    }
+    PushTexturedQuad(desc);
 
     quadCount++;
     totalQuadCount++;
@@ -478,11 +469,6 @@ void DrawQuad(Transform transform, Vec3 color)
     {
         Flush();
     }
-}
-
-void PushTexturedQuad(const TexturedQuad& quad)
-{
-    memcpy(quadBatch + quadCount, &quad, sizeof(TexturedQuad));
 }
 
 void DrawQuadTextured(const Transform& transform, Texture* texture, float tilingFactor = 1.0f, Vec3 colorTint = { 1.0f, 1.0f, 1.0f })
@@ -501,35 +487,6 @@ void DrawQuadTextured(const Transform& transform, Texture* texture, float tiling
     desc.ColorTint = colorTint;
 
     PushTexturedQuad(desc);
-
-    /*glm::mat4 model =
-        glm::translate(glm::mat4(1.0f), (glm::vec3)transform.Location)
-        *
-        GetRotation(transform.Rotation)
-        *
-        glm::scale(glm::mat4(1.0f), (glm::vec3)transform.Scale);
-
-    GetTextCoordinates((float*)QuadTextCoords, tilingFactor);
-
-    float textureLoc = FindTexture(texture);
-    if (textureLoc == -1)
-    {
-        PushTexture(texture);
-        textureLoc = textureIndex - 1;
-    }
-
-    for (int i = 0; i < 4; i++)
-    {
-        uint32_t vertexIndex = quadCount * 4;
-
-        glm::vec4 loc = QuadVertices[i];
-        glm::vec3 res = model * loc;
-
-        vertexBufferData[i + vertexIndex].Position = { res.x, res.y, res.z };
-        vertexBufferData[i + vertexIndex].Color = colorTint;
-        vertexBufferData[i + vertexIndex].TextureCoordinates = QuadTextCoords[i];
-        vertexBufferData[i + vertexIndex].TextureIndex = textureLoc;
-    }*/
 
     quadCount++;
     totalQuadCount++;
@@ -561,14 +518,15 @@ float totalTime = 0.0f;
 float deltaTime = 0.0f;
 
 float rotPerSec = 50.0f;
-float tilingFactor = 3.0f;
+float tilingFactor = 1.0f;
 
 float cameraMoveSpeed = 3.0f;
 float cameraScroolMultiplier = 100.0f;
-float mouseSens = 0.5f;
+float mouseSens = 0.2f;
 
-Transform mainQuadTransform = { { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f} };
-Vec3 mainQuadColor = { 1.0f, 1.0f, 1.0f };
+Transform mainQuadTransform = { { 0.0f, 0.0f, -0.2f }, { 0.0f, 0.0f, 0.0f }, { 1.5f, 1.5f, 1.0f} };
+Vec3 mainQuadColor = { 0.2f, 0.92f, 0.52f };
+Vec3 checkerboardQuadScale = { 1.0f, 1.0f, 1.0f };
 
 Texture* myTexture;
 
@@ -645,7 +603,7 @@ void ImGuiRender()
         {
             ImGui::DragFloat3("C_Location", &cam.Transform.Location.X, 0.01f);
             ImGui::DragFloat3("C_Rotation", &cam.Transform.Rotation.X, 0.01f);
-            ImGui::DragFloat("C_FOV", &cam.FOV, .01f, 0.01f, 1000.0f, "%.3f", 0);
+            ImGui::DragFloat("C_FOV", &cam.FOV, .01f, 0.01f, 1000.0f, "%.3f");
         }
     );
 
@@ -653,17 +611,13 @@ void ImGuiRender()
     (
         "Script",
         {
-            ImGui::DragInt("Checherboard size", &checherboardSize, 0);
-            ImGui::DragFloat("Rotation speed (deg/s)", &rotPerSec);
+            ImGui::DragInt("Checherboard size", &checherboardSize, 0.01f);
+            ImGui::DragFloat3("Checherboard quad scale", &checkerboardQuadScale.X, 0.01f);
+            ImGui::DragFloat("Rotation speed (deg/s)", &rotPerSec, 0.01f);
             ImGui::DragFloat("Texture tiling factor", &tilingFactor, 0.5f);
-            ImGui::DragFloat("Camera speed (units/s)", &cameraMoveSpeed);
-            ImGui::DragFloat("Camera scroll multiplier", &cameraScroolMultiplier);
-            ImGui::DragFloat("Mouse sensitivity", &mouseSens);
-            if (ImGui::Button("Reset camera transform"))
-            {
-                cam.Transform = {};
-                cam.Transform.Location.Z = -1.0f;
-            }
+            ImGui::DragFloat("Camera speed (units/s)", &cameraMoveSpeed, 0.01f);
+            ImGui::DragFloat("Camera scroll multiplier", &cameraScroolMultiplier, 0.01f);
+            ImGui::DragFloat("Mouse sensitivity", &mouseSens, 0.01f);
         }
     );
 
@@ -790,8 +744,8 @@ void UpdateCameraRotation()
 
 void DrawCheckerboard()
 {
-    Transform tmp = {};
-    tmp.Scale = { 1.0f, 1.0f, 1.0f };
+    Transform quadTransform = {};
+    quadTransform.Scale = checkerboardQuadScale;
 
     bool white = !(checherboardSize % 2);
 
@@ -803,8 +757,8 @@ void DrawCheckerboard()
         }
         for (uint32_t width = 0; width < checherboardSize; width++)
         {
-            tmp.Location = { 1.0f * width, 1.0f * height, 0.0f };
-            DrawQuadTextured(tmp, (white = !white) ? whiteTexture : myTexture, 1.0f, { 1.0f, 1.0f, 1.0f });
+            quadTransform.Location = { quadTransform.Scale.X * width, quadTransform.Scale.Y * height, 0.0f };
+            DrawQuadTextured(quadTransform, (white = !white) ? whiteTexture : myTexture, tilingFactor, { 1.0f, 1.0f, 1.0f });
         }
     }
 }
@@ -829,14 +783,14 @@ int main()
 
             cam.AspectRatio = (float)WndWidth / WndHeight;
 
-            mainQuadTransform.Rotation.Y += rotPerSec * deltaTime;
+            mainQuadTransform.Rotation.Z += rotPerSec * deltaTime;
 
             UpdateCameraLocation();
             UpdateCameraRotation();
 
             BeginScene(cam);
 
-            DrawQuadTextured(mainQuadTransform, myTexture, tilingFactor, mainQuadColor);
+            DrawQuad(mainQuadTransform, mainQuadColor);
 
             DrawCheckerboard();
 
