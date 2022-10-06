@@ -47,6 +47,50 @@ struct Vec3
     {
         return { -X, -Y, -Z };
     }
+
+    Vec3 operator+(Vec3 other)
+    {
+        return { X + other.X, Y + other.Y, Z + other.Z };
+    }
+
+    Vec3 operator*(Vec3 other)
+    {
+        return { X * other.X, Y * other.Y, Z * other.Z };
+    }
+
+    Vec3 operator+(float value)
+    {
+        return { X + value, Y + value, Z + value };
+    }
+
+    Vec3 operator*(float value)
+    {
+        return { X * value, Y * value, Z * value };
+    }
+
+    Vec3& operator+=(Vec3 other)
+    {
+        *this = *this + other;
+        return *this;
+    }
+
+    Vec3& operator*=(Vec3 other)
+    {
+        *this = *this * other;
+        return *this;
+    }
+
+    Vec3& operator+=(float value)
+    {
+        *this = *this + value;
+        return *this;
+    }
+
+    Vec3& operator*=(float value)
+    {
+        *this = *this * value;
+        return *this;
+    }
 };
 
 struct Vec4
@@ -665,19 +709,62 @@ float rot = 0.0f;
 float mouseX = 0.0f;
 float mouseY = 0.0f;
 
-inline void MoveCameraForward(float direction)
+Vec3 GetForwardVector(Vec3 rotation)
 {
-    cam.Transform.Location.Z += direction * cameraMoveSpeed * deltaTime;
+    Vec3 forward;
+
+    forward.X = cos(glm::radians(rotation.X)) * sin(glm::radians(rotation.Y));
+    forward.Y = -sin(glm::radians(rotation.X));
+    forward.Z = cos(glm::radians(rotation.X)) * cos(glm::radians(rotation.Y));
+
+    return forward;
 }
 
-inline void MoveCameraRight(float direction)
+Vec3 GetRightVector(Vec3 rotation)
 {
-    cam.Transform.Location.X += direction * cameraMoveSpeed * deltaTime;
+    Vec3 right;
+
+    right.X = cos(glm::radians(rotation.Y));
+    right.Y = 0.0f;
+    right.Z = -sin(glm::radians(rotation.Y));
+
+    return right;
+}
+
+Vec3 GetUpVector(Vec3 rotation)
+{
+    glm::vec3 up = glm::cross((glm::vec3)GetForwardVector(rotation), (glm::vec3)GetRightVector(rotation));
+
+    return { up.x, up.y, up.z };
+}
+
+
+
+void MoveCameraForward(float direction)
+{
+    Vec3 forward = GetForwardVector(cam.Transform.Rotation);
+
+    float finalSpeed = cameraMoveSpeed * deltaTime * direction;
+
+    cam.Transform.Location += forward * finalSpeed;
+}
+
+void MoveCameraRight(float direction)
+{
+    Vec3 right = GetRightVector(cam.Transform.Rotation);
+
+    float finalSpeed = cameraMoveSpeed * deltaTime * direction;
+
+    cam.Transform.Location += right * finalSpeed;
 }
 
 inline void MoveCameraUp(float direction)
 {
-    cam.Transform.Location.Y += direction * cameraMoveSpeed * deltaTime;
+    Vec3 up = GetUpVector(cam.Transform.Rotation);
+
+    float finalSpeed = cameraMoveSpeed * deltaTime * direction;
+
+    cam.Transform.Location += up * finalSpeed;
 }
 
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
