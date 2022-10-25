@@ -168,7 +168,7 @@ int WndWidth = 1600;
 int WndHeight = 900;
 bool Fullscreen = false;
 
-#define VSYNC 0
+#define VSYNC 1
 
 #define IMGUI 1
 
@@ -850,11 +850,43 @@ void DrawCheckerboard()
     }
 }
 
+#define GLFW_TIMER 0
+
+#if GLFW_TIMER == 0
+
+LARGE_INTEGER freq, startTicks, currentTicks;
+
+void InitTimer()
+{
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&startTicks);
+}
+
+double GetTime()
+{
+    QueryPerformanceCounter(&currentTicks);
+    return ((double)currentTicks.QuadPart - (double)startTicks.QuadPart) / freq.QuadPart;
+}
+
+#else
+
+void InitTimer()
+{
+}
+
+double GetTime()
+{
+    return glfwGetTime();
+}
+
+#endif
+
 int main()
 {
     if (Init())
     {
         InitRenderer(MAX_QUAD_BATCH);
+
 
         myTexture = Texture::FromFile("res/doom.png");
 
@@ -862,9 +894,11 @@ int main()
         cam.Transform.Location = { 0.0f, 0.0f, -1.0f };
         cam.Transform.Rotation = { 0.0f, 0.0f, 0.0f };
 
+        InitTimer();
+
         while (!glfwWindowShouldClose(window))
         {
-            float currentTime = glfwGetTime();
+            double currentTime = GetTime();
             deltaTime = currentTime - totalTime;
             totalTime = currentTime;
 
