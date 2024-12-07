@@ -14,94 +14,10 @@
 #include "Shader.h"
 #include "Texture.h"
 #include "Buffer.h"
+#include "Math.h"
 
 #include <Windows.h>
-
 #include <future>
-
-struct Vec2
-{
-    float X, Y;
-
-    operator glm::vec2() const
-    {
-        return glm::vec2(X, Y);
-    }
-};
-
-struct Vec3
-{
-    float X, Y, Z;
-
-    operator glm::vec3() const
-    {
-        return glm::vec3(X, Y, Z);
-    }
-
-    operator glm::vec4() const
-    {
-        return glm::vec4(X, Y, Z, 1.0f);
-    }
-
-    Vec3 operator-() const
-    {
-        return { -X, -Y, -Z };
-    }
-
-    Vec3 operator+(Vec3 other)
-    {
-        return { X + other.X, Y + other.Y, Z + other.Z };
-    }
-
-    Vec3 operator*(Vec3 other)
-    {
-        return { X * other.X, Y * other.Y, Z * other.Z };
-    }
-
-    Vec3 operator+(float value)
-    {
-        return { X + value, Y + value, Z + value };
-    }
-
-    Vec3 operator*(float value)
-    {
-        return { X * value, Y * value, Z * value };
-    }
-
-    Vec3& operator+=(Vec3 other)
-    {
-        *this = *this + other;
-        return *this;
-    }
-
-    Vec3& operator*=(Vec3 other)
-    {
-        *this = *this * other;
-        return *this;
-    }
-
-    Vec3& operator+=(float value)
-    {
-        *this = *this + value;
-        return *this;
-    }
-
-    Vec3& operator*=(float value)
-    {
-        *this = *this * value;
-        return *this;
-    }
-};
-
-struct Vec4
-{
-    float X, Y, Z, W;
-
-    operator glm::vec4() const
-    {
-        return glm::vec4(X, Y, Z, W);
-    }
-};
 
 struct Transform
 {
@@ -133,18 +49,6 @@ struct TexturedQuad
     float TilingFactor;
 };
 
-glm::mat4 GetRotation(Vec3 rotation)
-{
-    return
-    {
-        glm::rotate(glm::mat4(1.0f), glm::radians(rotation.X), glm::vec3(1.0f, 0.0f, 0.0f))
-        *
-        glm::rotate(glm::mat4(1.0f), glm::radians(rotation.Y), glm::vec3(0.0f, 1.0f, 0.0f))
-        *
-        glm::rotate(glm::mat4(1.0f), glm::radians(rotation.Z), glm::vec3(0.0f, 0.0f, 1.0f))
-    };
-}
-
 void GetTextCoordinates(float* coords, float tilingFactor = 1.0f)
 {
     coords[0] = 0.0f;
@@ -161,19 +65,18 @@ void GetTextCoordinates(float* coords, float tilingFactor = 1.0f)
 }
 
 void OnWindowResize(GLFWwindow* window, int width, int height);
-void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
+void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 
 
-int WndWidth = 1600;
-int WndHeight = 900;
-bool Fullscreen = false;
+static int WndWidth = 1600;
+static int WndHeight = 900;
+static bool Fullscreen = false;
+static bool VSync = true;
 
-#define VSYNC 1
+constexpr uint32_t MAX_QUAD_BATCH = 10000;
+constexpr uint32_t MAX_TEXTURE_SLOTS = 16;
 
-#define IMGUI 1
-
-#define MAX_QUAD_BATCH 10000
-#define MAX_TEXTURE_SLOTS 16
+#define USE_IMGUI 1
 
 GLFWwindow* window;
 
@@ -255,10 +158,10 @@ const Vec3 QuadVertices[] =
     { -0.5f,  0.5f, 0.0f }
 };
 
-Vec2 QuadTextCoords[4];
+static Vec2 QuadTextCoords[4];
 
-glm::mat4 view;
-glm::mat4 proj;
+static glm::mat4 view;
+static glm::mat4 proj;
 
 bool Init()
 {
@@ -280,7 +183,14 @@ bool Init()
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     /* Create a windowed mode window and its OpenGL context */
-    window = glfwCreateWindow(WndWidth, WndHeight, "Mhanz", Fullscreen ? glfwGetPrimaryMonitor() : 0, NULL);
+    std::string wndName;
+#if _DEBUG
+    wndName = "Test - Debug (slow)";
+#else
+    wndName = "Test - Release";
+#endif
+
+    window = glfwCreateWindow(WndWidth, WndHeight, wndName.c_str(), Fullscreen ? glfwGetPrimaryMonitor() : 0, NULL);
     
     if (!window)
     {
@@ -296,13 +206,13 @@ bool Init()
         return false;
     }
 
-    glfwSwapInterval(VSYNC);
+    glfwSwapInterval(VSync);
 
     glfwSetWindowSizeCallback(window, OnWindowResize);
 
-    glfwSetScrollCallback(window, scroll_callback);
+    glfwSetScrollCallback(window, ScrollCallback);
 
-#if IMGUI
+#if USE_IMGUI
 
     ImGui::CreateContext();
 
@@ -400,7 +310,7 @@ void BeginScene(Camera camera)
 
     glfwPollEvents();
 
-#if IMGUI
+#if USE_IMGUI
 
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
@@ -550,7 +460,7 @@ void EndScene()
     if (quadCount > 0 || textureIndex > 1)
         Flush();
 
-#if IMGUI
+#if USE_IMGUI
     ImGuiRender();
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -592,7 +502,7 @@ if(ImGui::CollapsingHeader(MenuName, ImGuiTreeNodeFlags_DefaultOpen)) \
 ImGui::Spacing(); \
 ImGui::Spacing();
 
-#if IMGUI
+#if USE_IMGUI
 void ImGuiRender()
 {
     ImGui::Begin("Settings");
@@ -626,9 +536,8 @@ void ImGuiRender()
         "Clear color",
         {
             ImGui::PushItemWidth(200);
-            ImGui::ColorPicker3("Background color", &clearColor.X, 0);
-            ImGui::PopItemWidth();
-            if (ImGui::Button("Apply"))
+            
+            if (ImGui::ColorPicker3("Background color", &clearColor.X, 0))
             {
                 glClearColor(clearColor.X, clearColor.Y, clearColor.Z, 1.0f);
             }
@@ -713,37 +622,6 @@ float rot = 0.0f;
 float mouseX = 0.0f;
 float mouseY = 0.0f;
 
-Vec3 GetForwardVector(Vec3 rotation)
-{
-    Vec3 forward;
-
-    forward.X = cos(glm::radians(rotation.X)) * sin(glm::radians(rotation.Y));
-    forward.Y = -sin(glm::radians(rotation.X));
-    forward.Z = cos(glm::radians(rotation.X)) * cos(glm::radians(rotation.Y));
-
-    return forward;
-}
-
-Vec3 GetRightVector(Vec3 rotation)
-{
-    Vec3 right;
-
-    right.X = cos(glm::radians(rotation.Y));
-    right.Y = 0.0f;
-    right.Z = -sin(glm::radians(rotation.Y));
-
-    return right;
-}
-
-Vec3 GetUpVector(Vec3 rotation)
-{
-    glm::vec3 up = glm::cross((glm::vec3)GetForwardVector(rotation), (glm::vec3)GetRightVector(rotation));
-
-    return { up.x, up.y, up.z };
-}
-
-
-
 void MoveCameraForward(float direction)
 {
     Vec3 forward = GetForwardVector(cam.Transform.Rotation);
@@ -771,7 +649,7 @@ inline void MoveCameraUp(float direction)
     cam.Transform.Location += up * finalSpeed;
 }
 
-void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
+void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
 {
     double mouseX, mouseY;
     glfwGetCursorPos(window, &mouseX, &mouseY);
@@ -858,7 +736,7 @@ void DrawCheckerboard()
 
 #if GLFW_TIMER == 0
 
-LARGE_INTEGER freq, startTicks, currentTicks;
+static LARGE_INTEGER freq, startTicks, currentTicks;
 
 void InitTimer()
 {
@@ -894,8 +772,8 @@ int main()
 
         myTexture = Texture::FromFile("res/doom.png");
 
-        cam.FOV = 120.0f;
-        cam.Transform.Location = { 0.0f, 0.0f, -1.0f };
+        cam.FOV = 60.0f;
+        cam.Transform.Location = { 0.0f, 0.0f, -5.0f };
         cam.Transform.Rotation = { 0.0f, 0.0f, 0.0f };
 
         InitTimer();
